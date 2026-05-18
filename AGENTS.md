@@ -8,3 +8,5 @@ This project is developed collaboratively between a human developer and AI agent
 - **GitHub**: shohrux-btc
 - **First commit**: 2026-05-18
 - **Status**: Active
+
+> Identity verified: shohrux-btc @ 2026-05-18

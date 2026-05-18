@@ -43,4 +43,4 @@ ACTIONS = {
 }
 
 N_ACTIONS = len(ACTIONS)
-N_FEATURES = 22  # 20 базовых + 2 funding rate (fr_normalized, fr_ma_24h)
+N_FEATURES = 27  # 22 базовых + 3 Quantum Leap (mu, sigma, z_score) + 2 тренд (regime, ma_cross)

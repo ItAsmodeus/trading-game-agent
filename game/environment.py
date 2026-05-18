@@ -122,6 +122,7 @@ class TradingEnv(gym.Env):
         self.peak_portfolio = self.portfolio
         self.position       = 0.0           # -1=short, 0=flat, 1=long
         self.entry_price    = 0.0
+        self.entry_step     = 0             # шаг когда открыта позиция
         self.trade_count    = 0
         self.done           = False
         self.max_steps      = len(self.df) - 2
@@ -135,10 +136,12 @@ class TradingEnv(gym.Env):
             if self.position <= 0:
                 self.position    = 1.0 if name == "BUY" else 0.5
                 self.entry_price = price
+                self.entry_step  = self.step_idx
         elif name in ("SELL_SHORT", "SELL_HALF"):
             if self.position >= 0:
                 self.position    = -1.0 if name == "SELL_SHORT" else -0.5
                 self.entry_price = price
+                self.entry_step  = self.step_idx
         elif name == "CLOSE":
             self.position    = 0.0
             self.entry_price = 0.0
@@ -172,7 +175,11 @@ class TradingEnv(gym.Env):
         # Overtrading penalty
         cost_penalty = cost / max(self.portfolio, 1.0) * 8.0
 
-        reward = ret - dd_penalty - cost_penalty
+        # Штраф за чёрн: закрыл позицию менее чем через 3 бара → минус
+        bars_held = self.step_idx - self.entry_step
+        churn_penalty = -0.002 if (self.position == 0 and bars_held < 3) else 0.0
+
+        reward = ret - dd_penalty - cost_penalty + churn_penalty
         return float(np.clip(reward, -10.0, 10.0))
 
     def _observe(self) -> np.ndarray:
@@ -225,26 +232,55 @@ class TradingEnv(gym.Env):
         fr_norm = float(df["fr_normalized"].iloc[i]) if "fr_normalized" in df.columns else 0.0
         fr_ma   = float(df["fr_ma_24h"].iloc[i])     if "fr_ma_24h" in df.columns else 0.0
 
+        # ── Quantum Leap: Log-Normal модель цены (число e) ──────────────
+        # Натуральный дрифт μ — куда цена идёт "по природе" за 60 дней
+        mu_60 = float(np.log(close / (df["close"].iloc[max(0, i-60)] + 1e-8)) / 60)
+        mu_60 = float(np.clip(mu_60, -0.05, 0.05))
+
+        # Волатильность σ (annualized)
+        log_rets = np.log(df["close"].iloc[max(0,i-20):i] / df["close"].iloc[max(0,i-21):i-1] + 1e-8)
+        sigma_20 = float(log_rets.std() * np.sqrt(252)) if len(log_rets) > 1 else 0.03
+        sigma_20 = float(np.clip(sigma_20, 0, 3))
+
+        # Z-score: насколько цена далека от "справедливой" (через e)
+        expected_price = float(df["close"].iloc[i-1]) * np.exp(mu_60)
+        z_score = (close - expected_price) / max(sigma_20 * close / np.sqrt(252), 1e-8)
+        z_score = float(np.clip(z_score, -3, 3))
+
+        # Режим рынка: цена vs MA(200) — агент сам решает лонг или шорт
+        ma200 = df["close"].iloc[max(0, i-200):i].mean()
+        regime = float(np.clip((close - ma200) / (ma200 + 1e-8), -0.5, 0.5))
+
+        # MA(20) vs MA(50) — краткосрочный тренд
+        ma20   = df["close"].iloc[max(0, i-20):i].mean()
+        ma50   = df["close"].iloc[max(0, i-50):i].mean()
+        ma_cross = float(np.clip((ma20 - ma50) / (ma50 + 1e-8), -0.1, 0.1))
+
         obs = np.array([
-            r1, r5, r20,          # 3
-            vol,                   # 1
-            rsi,                   # 1
-            vol_ratio,             # 1
-            macd,                  # 1
-            bb,                    # 1
-            atr,                   # 1
-            body,                  # 1
-            hrange,                # 1
-            self.position,         # 1
-            drawdown,              # 1
-            cap_ratio,             # 1
-            progress,              # 1
-            sin_t, cos_t,          # 2
-            sin_w, cos_w,          # 2
-            float(self.trade_count) / max(self.config["max_orders_per_day"], 1),  # 1
-            fr_norm,               # 1  ← funding rate normalized [-1, 1]
-            fr_ma,                 # 1  ← скользящее среднее FR 24ч
-        ], dtype=np.float32)      # итого 22
+            r1, r5, r20,          # 0-2:  доходности
+            vol,                   # 3:    волатильность
+            rsi,                   # 4:    RSI
+            vol_ratio,             # 5:    объём
+            macd,                  # 6:    MACD
+            bb,                    # 7:    Bollinger
+            atr,                   # 8:    ATR
+            body,                  # 9:    тело свечи
+            hrange,                # 10:   диапазон
+            self.position,         # 11:   текущая позиция
+            drawdown,              # 12:   просадка
+            cap_ratio,             # 13:   капитал / старт
+            progress,              # 14:   прогресс к цели
+            sin_t, cos_t,          # 15-16: время (год)
+            sin_w, cos_w,          # 17-18: время (неделя)
+            float(self.trade_count) / max(self.config["max_orders_per_day"], 1),  # 19
+            fr_norm,               # 20:   funding rate
+            fr_ma,                 # 21:   FR скользящее среднее
+            mu_60,                 # 22:   ⚛️ натуральный дрифт
+            sigma_20,              # 23:   ⚛️ волатильность (annualized)
+            z_score,               # 24:   ⚛️ Z-score от справедливой цены
+            regime,                # 25:   📈 режим рынка (bull/bear)
+            ma_cross,              # 26:   📊 MA20 vs MA50
+        ], dtype=np.float32)      # итого 27
 
         return np.nan_to_num(obs, nan=0.0, posinf=1.0, neginf=-1.0)
 

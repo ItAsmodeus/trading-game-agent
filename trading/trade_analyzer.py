@@ -51,6 +51,12 @@ class MarketSnapshot:
     volatility:     float = 0.0     # волатильность (20-period std)
     atr:            float = 0.0     # ATR нормализованный
     candle_body:    float = 0.0     # тело свечи (close-open)/close
+    # Quantum Leap поля
+    z_score:        float = 0.0     # отклонение от справедливой цены
+    regime:         float = 0.0     # режим рынка: + bull, - bear
+    mu_60:          float = 0.0     # натуральный дрифт (60д)
+    sigma_20:       float = 0.03    # волатильность annualized
+    ma_cross:       float = 0.0     # MA20 vs MA50
     # Скальперские поля (заполняются в scalper режиме)
     orderbook:      Optional[OrderBookSnapshot] = None
     mode:           str = "swing"   # "swing" / "intraday" / "scalper"
@@ -265,6 +271,14 @@ class TradeAnalyzer:
         r = self._news_reason(news, is_long)
         if r: reasons.append(r)
 
+        # 12. ⚛️ Z-Score (Quantum Leap)
+        r = self._z_score_reason(snap.z_score, is_long)
+        if r: reasons.append(r)
+
+        # 13. 📈 Режим рынка (MA200 + дрифт)
+        r = self._regime_reason(snap.regime, snap.mu_60, is_long)
+        if r: reasons.append(r)
+
         return reasons
 
     def _rsi_reason(self, rsi: float, is_long: bool) -> Optional[TradeReason]:
@@ -287,13 +301,13 @@ class TradeAnalyzer:
         return None
 
     def _macd_reason(self, macd: float, is_long: bool) -> Optional[TradeReason]:
-        if is_long and macd > 0.001:      # смягчено: 0.002 → 0.001
+        if is_long and macd > 0.002:      # возвращаем 0.002 — фикс overtrading
             return TradeReason(
                 source="Технический", signal="MACD бычий",
                 description=f"MACD гистограмма положительная ({macd:+.4f}) — бычий импульс",
                 strength=min(1.0, macd * 100), is_bullish=True,
             )
-        if not is_long and macd < -0.001:  # смягчено
+        if not is_long and macd < -0.002:
             return TradeReason(
                 source="Технический", signal="MACD медвежий",
                 description=f"MACD гистограмма отрицательная ({macd:+.4f}) — медвежий импульс",
@@ -585,6 +599,38 @@ class TradeAnalyzer:
                 source="Тик-моментум", signal="Медвежий тик-поток",
                 description=f"Последовательные медвежьи тики (направление {tick_direction:+.2f}) — продавцы контролируют рынок",
                 strength=abs(tick_direction), is_bullish=False,
+            )
+        return None
+
+    def _z_score_reason(self, z_score: float, is_long: bool) -> Optional[TradeReason]:
+        """⚛️ Quantum Leap: цена далека от справедливой (Log-Normal модель)."""
+        if is_long and z_score < -1.5:
+            return TradeReason(
+                source="⚛️ Quantum", signal="Z-Score: цена занижена",
+                description=f"Цена на {abs(z_score):.1f}σ ниже справедливой (Log-Normal модель) — математически дёшево",
+                strength=min(1.0, abs(z_score) / 3), is_bullish=True,
+            )
+        if not is_long and z_score > 1.5:
+            return TradeReason(
+                source="⚛️ Quantum", signal="Z-Score: цена завышена",
+                description=f"Цена на {z_score:.1f}σ выше справедливой (Log-Normal модель) — математически дорого",
+                strength=min(1.0, z_score / 3), is_bullish=False,
+            )
+        return None
+
+    def _regime_reason(self, regime: float, mu_60: float, is_long: bool) -> Optional[TradeReason]:
+        """📈 Режим рынка: цена vs MA(200) + натуральный дрифт."""
+        if is_long and regime > 0.05 and mu_60 > 0:
+            return TradeReason(
+                source="Режим рынка", signal="Бычий режим (MA200)",
+                description=f"Цена на {regime:.1%} выше MA(200) и дрифт μ={mu_60*100:.2f}%/день — бычий рынок подтверждён",
+                strength=min(1.0, regime * 5), is_bullish=True,
+            )
+        if not is_long and regime < -0.05 and mu_60 < 0:
+            return TradeReason(
+                source="Режим рынка", signal="Медвежий режим (MA200)",
+                description=f"Цена на {abs(regime):.1%} ниже MA(200) и дрифт μ={mu_60*100:.2f}%/день — медвежий рынок подтверждён",
+                strength=min(1.0, abs(regime) * 5), is_bullish=False,
             )
         return None
 

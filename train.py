@@ -16,9 +16,11 @@ from stable_baselines3.common.callbacks import EvalCallback, CheckpointCallback
 from data.loader import load_from_csv, load_from_exchange, train_test_split
 from game.environment import TradingEnv
 from game.rules import GAME_RULES, ACTIONS
+from game.trading_modes import get_mode, get_game_rules, MODES
 from trading.trade_diary import TradeDiary, init_diary
 from trading.trade_analyzer import TradeAnalyzer, MarketSnapshot
 from data.news_fetcher import NewsFetcher
+from data.orderbook_sim import OrderBookSimulator
 
 
 def make_env(df, config):
@@ -28,19 +30,30 @@ def make_env(df, config):
 
 
 def train(args):
+    # 0. Режим торговли
+    mode_cfg  = get_mode(args.mode)
+    game_rules = get_game_rules(mode_cfg)
+    timeframe  = args.timeframe or mode_cfg.timeframe
+
+    print(f"\n{'='*50}")
+    print(f"Режим: {mode_cfg.name}")
+    print(f"{mode_cfg.description_ru}")
+    print(f"Таймфрейм: {timeframe} | Стоп: {mode_cfg.stop_loss_pct:.1%} | Тейк: {mode_cfg.take_profit_pct:.1%}")
+    print(f"{'='*50}\n")
+
     # 1. Загрузить данные
     if args.data:
         df_full = load_from_csv(args.data)
     else:
         print(f"Загружаю {args.symbol} с {args.exchange}...")
-        df_full = load_from_exchange(args.symbol, args.timeframe, limit=2000, exchange=args.exchange)
+        df_full = load_from_exchange(args.symbol, timeframe, limit=mode_cfg.limit_bars, exchange=args.exchange)
 
     train_df, val_df, test_df = train_test_split(df_full)
 
     # 2. Создать среды
     n_envs = min(args.n_envs, os.cpu_count() or 4)
-    train_envs = make_vec_env(make_env(train_df, GAME_RULES), n_envs=n_envs)
-    eval_env   = TradingEnv(val_df, GAME_RULES)
+    train_envs = make_vec_env(make_env(train_df, game_rules), n_envs=n_envs)
+    eval_env   = TradingEnv(val_df, game_rules)
 
     # 3. Callbacks
     os.makedirs("./checkpoints", exist_ok=True)
@@ -92,13 +105,19 @@ def train(args):
     # 6. Тест на test set с дневником трейдера
     print("\nТест на OOS данных (test set)...")
 
-    # Инициализируем дневник
-    init_diary()
-    diary    = TradeDiary(session_label=f"OOS тест — {args.symbol} {args.timeframe}")
-    analyzer = TradeAnalyzer(news_fetcher=NewsFetcher())
-    diary.start_session(symbol=args.symbol, capital=GAME_RULES["starting_capital"], mode="backtest")
+    # Инициализируем стакан для скальпера
+    ob_sim = OrderBookSimulator(test_df) if args.mode == "scalper" else None
 
-    test_env  = TradingEnv(test_df, GAME_RULES)
+    # Инициализируем дневник в папке режима
+    diary_dir  = f"./bots/{args.mode}"
+    diary_path = f"{diary_dir}/DIARY.md"
+    os.makedirs(diary_dir, exist_ok=True)
+    init_diary(diary_path)
+    diary    = TradeDiary(path=diary_path, session_label=f"OOS тест [{mode_cfg.name}] — {args.symbol} {timeframe}")
+    analyzer = TradeAnalyzer(news_fetcher=NewsFetcher(), mode=args.mode)
+    diary.start_session(symbol=args.symbol, capital=game_rules["starting_capital"], mode="backtest")
+
+    test_env  = TradingEnv(test_df, game_rules)
     obs, _    = test_env.reset()
     portfolio_history = [GAME_RULES["starting_capital"]]
     open_trade_id     = None
@@ -121,10 +140,16 @@ def train(args):
             volume_ratio  = float(obs[5]),
             ret_1d        = float(obs[0]),
             ret_5d        = float(obs[1]),
+            ret_20d       = float(obs[2]),
+            volatility    = float(obs[3]),
+            atr           = float(obs[8]),
+            candle_body   = float(obs[9]),
             funding_rate  = float(obs[20]) * 0.001 if len(obs) > 20 else 0.0,
             position      = float(test_env.position),
             portfolio     = float(test_env.portfolio),
             peak_portfolio= float(test_env.peak_portfolio),
+            orderbook     = ob_sim.snapshot(min(idx, len(test_df)-1)) if ob_sim else None,
+            mode          = args.mode,
             date          = date,
             symbol        = args.symbol,
         )
@@ -176,7 +201,7 @@ def train(args):
     print(f"  Max Drawdown:       {drawdown:.1f}%")
     print(f"  Сделок:             {info['trade_count']}")
     print(f"{'='*50}")
-    print(f"\n📒 Дневник трейдера записан: TRADE_DIARY.md")
+    print(f"\n📒 Дневник трейдера записан: {diary_path}")
 
 
 if __name__ == "__main__":
@@ -184,9 +209,11 @@ if __name__ == "__main__":
     parser.add_argument("--data",       type=str, default=None,       help="Путь к CSV файлу")
     parser.add_argument("--exchange",   type=str, default="binance",  help="Биржа (ccxt)")
     parser.add_argument("--symbol",     type=str, default="BTC/USDT", help="Пара")
-    parser.add_argument("--timeframe",  type=str, default="1d",       help="Таймфрейм")
+    parser.add_argument("--timeframe",  type=str, default=None,       help="Таймфрейм (авто из режима)")
     parser.add_argument("--timesteps",  type=int, default=500_000,    help="Шагов обучения")
     parser.add_argument("--n_envs",     type=int, default=4,          help="Параллельных сред")
+    parser.add_argument("--mode",       type=str, default="swing",
+                        choices=["swing", "intraday", "scalper"],    help="Режим торговли")
     args = parser.parse_args()
 
     train(args)

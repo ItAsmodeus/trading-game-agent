@@ -12,8 +12,8 @@
 | Our v1 (200k) | agent2/dev | 0.270 | +2.49% | 59% | 17 окон, 1h candles |
 | Our v2 (500k) | agent2/dev | ~0.27 | +2.7% | ~59% | Переобучение на тренировочном окне |
 | Our v3 (TL+DD+Time+OBI+FR) | agent2/dev | -0.788 | — | — | ❌ DD penalty слишком агрессивный → 0 сделок |
-| Our v4 (no-DD, milestones, churn, 300k) | agent2/dev | 🔄 в работе | Win1=-7.1%, Win2=+0.67% | — | obs=1329, curriculum learning, ~17ч осталось |
-| Our v5 (+ Z-score, regime, mu_60, sigma_20) | agent2/dev | 📋 плановый | — | — | H-006 реализован, старт после v4 |
+| Our v4 (no-DD, milestones, churn, 300k) | agent2/dev | **+0.193** | +1.72% | 59% (10/17) | obs=1329, best win: +20.57% (BTC bull), worst: -14.37% (2025 bear) |
+| Our v5 (H-006: Z-score+regime + fix panic-trading) | agent2/dev | 📋 плановый | — | — | Цель: укротить окна 15-16 (2025 bear), obs ~1569 |
 
 ---
 

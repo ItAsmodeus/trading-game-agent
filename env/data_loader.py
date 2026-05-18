@@ -89,8 +89,11 @@ def fetch_futures_features(
         age_hours = (time.time() - cache_path.stat().st_mtime) / 3600
         if age_hours < 24:
             cached = pd.read_parquet(cache_path)
+            since_ts = pd.Timestamp(since, tz="UTC")
             until_ts = pd.Timestamp(until, tz="UTC")
-            if cached.index[-1] >= until_ts - pd.Timedelta("48h"):
+            # Cache valid only if it covers BOTH start and end of requested window
+            if cached.index[0] <= since_ts + pd.Timedelta("48h") and \
+               cached.index[-1] >= until_ts - pd.Timedelta("48h"):
                 return cached
 
     exchange = ccxt.binanceusdm({"enableRateLimit": True})

@@ -42,6 +42,18 @@
 **Статус:** 💡 Идея
 **Риск:** Сложнее реализовать, нестационарная награда
 
+### H-006: Log-Normal Z-Score Features
+**Источник:** Анализ master bot (Quantum Leap v1, коммит eb49679, 2026-05-18)
+**Идея:** Добавить в observation 4 новых признака на каждый бар в LOOKBACK окне:
+- `mu_60` — натуральный дрифт (60-bar log return drift) — насколько сильна инерция
+- `sigma_20` — 20-bar аннуализированная волатильность (для 1h: ×√8760)
+- `z_score_ln` — Z-score от "справедливой" цены по GBM: z=(price−expected)/(σ×price/√8760)
+- `regime` — отклонение цены от MA200 (clip ±50%)
+**Разница от main bot:** Они используют hardcoded пороги в rule-based TradeAnalyzer (z<-1.5 → BUY). Мы подаём сырые числа агенту и даём PPO самому выучить пороги — это гибче.
+**Ожидание:** Агент будет "видеть" перекупленность/перепроданность через GBM модель, а не только RSI/MACD.
+**Статус:** ✅ Реализовано в data_loader.py — войдёт в v5
+**Метрика успеха:** WF Sharpe > v4 baseline, avg_trade_bars увеличивается (агент дольше держит позиции)
+
 ---
 
 ## Отклонённые гипотезы
@@ -66,26 +78,22 @@
 - https://arxiv.org/search/?query=reinforcement+learning+trading — arxiv RL trading
 - https://github.com/topics/reinforcement-learning-trading — GitHub проекты
 
-### Скан 2026-05-18
-**Изменения в master:**
-- f1ef67b feat: РїРµСЂСЃРѕРЅС‹ Р’Р°РЅРё РџРѕРїРѕРІР° + РќРёРєРёС‚С‹ + Р°РЅР°Р»РёР· Viking
-- CONTEXT.md
-- STRATEGY.md
-- personas/nikita_kotkovsky.md
-- personas/vanya_popov.md
-- risks/RISKS.md
-- ab9229f strategy: РїРёРІРѕС‚ v2.0 вЂ” С„РѕРєСѓСЃ РЅР° РЅРёС€Рё РІРЅРµ HFT
-- AGENT_BRAIN.md
-- CONTEXT.md
-- STRATEGY.md
-- bots/scalper/BRAIN.md
-- 3c0f3d3 docs: РїРµСЂСЃРѕРЅР° РќРёРєРёС‚С‹ + Р°РЅР°Р»РёР· СЂРёСЃРєРѕРІ РїСЂРѕРµРєС‚Р°
-- personas/nikita_kotkovsky.md
-- risks/RISKS.md
-- 32dbfd2 feat: С‚СЂРё СЂРµР¶РёРјР° С‚РѕСЂРіРѕРІР»Рё + СЂР°Р·РґРµР»СЊРЅС‹Рµ РјРѕР·РіРё Р°РіРµРЅС‚РѕРІ
-- AGENT_BRAIN.md
-- bots/intraday/BRAIN.md
-- bots/scalper/BRAIN.md
-- bots/swing/BRAIN.md
-- data/orderbook_sim.py
-_Требует ручного анализа — добавить гипотезы выше если есть интересные идеи._
+### Скан 2026-05-18 (первый)
+**Коммиты в master (не в agent2/dev):**
+- `32dbfd2` feat: три режима торговли + раздельные мозги агентов (scalper/intraday/swing)
+- `f1ef67b` feat: персоны Вани Попова + Никиты + анализ Viking
+- `ab9229f` strategy: пивот v2.0 — фокус на ниши вне HFT
+- `4e8c118` feat: игровые механики — милстоуны, очки, интерфейс (в коде игры, не RL)
+- `bf2753b` feat: Quantum Leap скилл — Log-Normal модель цены через e
+- `eb49679` feat: Quantum Leap v1 — N=27, z_score, regime, anti-churn
+
+**Ключевые находки:**
+1. **Quantum Leap (eb49679)**: +5 фичей к observation (mu_60, sigma_20, z_score, regime, ma_cross). Anti-churn: bars<3 → -0.002. MACD порог возвращён 0.001→0.002 (был overtrading).
+2. **Три режима (32dbfd2)**: scalper (5m), intraday (1h), swing (1d) — три отдельных агента. Наше решение (один агент с 7 действиями) проще и не требует трёх моделей.
+3. **Скальпер заморожен** (scalper/BRAIN.md): 0 сделок из-за DD penalty на 5m данных — классическая проблема, которую мы решили в v4 убрав DD penalty.
+
+**Что взяли**: H-006 (log-normal z-score + regime + mu_60 + sigma_20) — реализовано в data_loader.py для v5.
+**Что отклонили**: Три режима (уже отклонено как X-003), scalper mode (не наш путь).
+
+### Скан 2026-05-18 (второй, +2ч)
+**Нет новых коммитов в master** — eb49679 всё ещё последний.

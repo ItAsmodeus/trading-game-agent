@@ -11,7 +11,9 @@
 | Main v1 (PPO 200k) | master | 1.21 | +8.5% | — | OOS, медвежий рынок, 43 сделки/150 дней |
 | Our v1 (200k) | agent2/dev | 0.270 | +2.49% | 59% | 17 окон, 1h candles |
 | Our v2 (500k) | agent2/dev | ~0.27 | +2.7% | ~59% | Переобучение на тренировочном окне |
-| Our v3 (TL+DD+Time+OBI+FR) | agent2/dev | — | — | — | В работе: +OBI, +VWAP_dev, FR fix, obs: 1209→1329 |
+| Our v3 (TL+DD+Time+OBI+FR) | agent2/dev | -0.788 | — | — | ❌ DD penalty слишком агрессивный → 0 сделок |
+| Our v4 (no-DD, milestones, churn, 300k) | agent2/dev | 🔄 в работе | Win1=-7.1%, Win2=+0.67% | — | obs=1329, curriculum learning, ~17ч осталось |
+| Our v5 (+ Z-score, regime, mu_60, sigma_20) | agent2/dev | 📋 плановый | — | — | H-006 реализован, старт после v4 |
 
 ---
 
@@ -20,14 +22,19 @@
 | Параметр | Main Bot (master) | Our Bot (agent2/dev) |
 |----------|-------------------|----------------------|
 | Таймфрейм | 1d | 1h |
-| Observation | 22 flat features | 60×20 + 9 = 1209 |
+| Observation | 27 flat features (Quantum Leap v1) | 60×n_features + 9 (LOOKBACK window) |
+| Observation size | 27 | ~1329 (v4), ~1569 (v5 с H-006) |
 | Шорт | ✅ | ❌ (в планах) |
 | Transfer learning | ✅ | ✅ (v3+) |
-| Drawdown penalty | ✅ quadratic | ✅ (v3+) |
-| Idle penalty | ❌ | ✅ (v3+) |
-| Funding rate | ✅ | ✅ Fixed (OI только для последних 30 дней) |
-| Time features | ✅ sin/cos | ✅ (v3+) |
+| Drawdown penalty | ✅ quadratic | ❌ Удалён в v4 (слишком агрессивный) |
+| Idle penalty | ❌ | ✅ -0.0001 |
+| Churn penalty | ✅ bars<3 → -0.002 | ✅ bars<5 → -0.001 |
+| Curriculum milestones | ✅ (игровые) | ✅ (1h-adapted: 168h/720h/2160h) |
+| Funding rate | ✅ | ✅ (OI skip для окон >30 дней назад) |
+| Time features | ✅ sin/cos | ✅ (v3+): episode + weekly cycle |
 | Actions | 6 (incl. SHORT) | 7 (BUY/SELL 25/50/100%) |
+| Z-score (log-normal) | ✅ rule-based TradeAnalyzer | ✅ raw feature → агент учится сам (v5+) |
+| MA200 regime | ✅ | ✅ (v5+) |
 
 ---
 
@@ -52,3 +59,4 @@
 |------|---------------------|-------------|-------------|
 | 2026-05-18 | OrderBook simulator, 3 режима (scalper/intraday/swing), стратпивот v2.0 | Частично | OBI идею взяли, режимы — нет (наш путь другой) |
 | 2026-05-18 | Rolling trainer, risk_manager, binance_funding, trade_diary | Частично | TL + DD penalty взяли |
+| 2026-05-18 | Quantum Leap v1: z_score_ln, regime, mu_60, sigma_20, ma_cross; anti-churn bars<3 | ✅ Взяли (H-006) | Наш подход: raw features в obs vs их rule-based пороги. +MA200 regime. Реализовано для v5 |

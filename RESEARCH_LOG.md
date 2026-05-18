@@ -61,3 +61,27 @@
 - https://habr.com/ru/hubs/machine_learning/ — ML на Хабре
 - https://arxiv.org/search/?query=reinforcement+learning+trading — arxiv RL trading
 - https://github.com/topics/reinforcement-learning-trading — GitHub проекты
+
+### Скан 2026-05-18
+**Изменения в master:**
+- f1ef67b feat: РїРµСЂСЃРѕРЅС‹ Р’Р°РЅРё РџРѕРїРѕРІР° + РќРёРєРёС‚С‹ + Р°РЅР°Р»РёР· Viking
+- CONTEXT.md
+- STRATEGY.md
+- personas/nikita_kotkovsky.md
+- personas/vanya_popov.md
+- risks/RISKS.md
+- ab9229f strategy: РїРёРІРѕС‚ v2.0 вЂ” С„РѕРєСѓСЃ РЅР° РЅРёС€Рё РІРЅРµ HFT
+- AGENT_BRAIN.md
+- CONTEXT.md
+- STRATEGY.md
+- bots/scalper/BRAIN.md
+- 3c0f3d3 docs: РїРµСЂСЃРѕРЅР° РќРёРєРёС‚С‹ + Р°РЅР°Р»РёР· СЂРёСЃРєРѕРІ РїСЂРѕРµРєС‚Р°
+- personas/nikita_kotkovsky.md
+- risks/RISKS.md
+- 32dbfd2 feat: С‚СЂРё СЂРµР¶РёРјР° С‚РѕСЂРіРѕРІР»Рё + СЂР°Р·РґРµР»СЊРЅС‹Рµ РјРѕР·РіРё Р°РіРµРЅС‚РѕРІ
+- AGENT_BRAIN.md
+- bots/intraday/BRAIN.md
+- bots/scalper/BRAIN.md
+- bots/swing/BRAIN.md
+- data/orderbook_sim.py
+_Требует ручного анализа — добавить гипотезы выше если есть интересные идеи._

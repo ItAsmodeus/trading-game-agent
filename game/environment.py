@@ -11,6 +11,7 @@ from gymnasium import spaces
 
 from game.market import RealisticMarket
 from game.rules import GAME_RULES, N_ACTIONS, N_FEATURES
+from game.milestones import MilestoneTracker
 
 
 class TradingEnv(gym.Env):
@@ -86,6 +87,12 @@ class TradingEnv(gym.Env):
         terminated = self._check_terminated()
         reward     = self._compute_reward(pnl, cost)
 
+        # Бонус от игровых достижений (curriculum learning)
+        returns = np.diff([self.config["starting_capital"], self.portfolio])
+        sharpe  = float(returns[-1] / (abs(returns[-1]) + 1e-8)) if len(returns) > 0 else 0.0
+        milestone_bonus = self.milestones.update(self.portfolio, self.trade_count, sharpe, self.step_idx)
+        reward += milestone_bonus
+
         obs  = self._observe()
         info = {
             "portfolio":   self.portfolio,
@@ -118,6 +125,7 @@ class TradingEnv(gym.Env):
         self.trade_count    = 0
         self.done           = False
         self.max_steps      = len(self.df) - 2
+        self.milestones     = MilestoneTracker(self.config["starting_capital"])
 
     def _update_position(self, action: int, price: float):
         from game.rules import ACTIONS

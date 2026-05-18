@@ -21,6 +21,8 @@ from trading.trade_diary import TradeDiary, init_diary
 from trading.trade_analyzer import TradeAnalyzer, MarketSnapshot
 from data.news_fetcher import NewsFetcher
 from data.orderbook_sim import OrderBookSimulator
+from game.interface import GameInterface, render_final_score
+from game.rules import ACTIONS
 
 
 def make_env(df, config):
@@ -119,8 +121,16 @@ def train(args):
 
     test_env  = TradingEnv(test_df, game_rules)
     obs, _    = test_env.reset()
-    portfolio_history = [GAME_RULES["starting_capital"]]
+    portfolio_history = [game_rules["starting_capital"]]
     open_trade_id     = None
+
+    # Игровой интерфейс
+    game_ui = GameInterface(
+        agent_name=f"Agent [{mode_cfg.name}]",
+        starting_capital=game_rules["starting_capital"],
+        mode=args.mode,
+    )
+    print(f"\n🎮 Игра началась!\n")
 
     step = 0
     while True:
@@ -172,12 +182,29 @@ def train(args):
         # Исполняем (возможно заменённое) действие
         obs, reward, terminated, truncated, info = test_env.step(decision.action)
         portfolio_history.append(info["portfolio"])
+
+        # Обновляем игровой интерфейс каждые 5 шагов
+        if step % 5 == 0 or decision.action != 0:
+            dd = (test_env.peak_portfolio - test_env.portfolio) / max(test_env.peak_portfolio, 1)
+            returns_so_far = np.diff(portfolio_history) / np.array(portfolio_history[:-1]) if len(portfolio_history) > 1 else np.array([0.0])
+            sharpe_live = float(returns_so_far.mean() / (returns_so_far.std() + 1e-8) * np.sqrt(252)) if len(returns_so_far) > 1 else 0.0
+            game_ui.render(
+                portfolio   = info["portfolio"],
+                position    = test_env.position,
+                trade_count = info["trade_count"],
+                sharpe      = sharpe_live,
+                drawdown    = dd,
+                step        = step,
+                action_name = decision.action_name[:25],
+                date        = date,
+            )
+
         step += 1
 
         if terminated or truncated:
-            # Закрываем открытую позицию
             if open_trade_id:
                 diary.log_close(open_trade_id, price, "Конец тестового периода", info["portfolio"], step)
+            render_final_score(game_ui.tracker, info["portfolio"], game_rules["starting_capital"])
             break
 
     # Итоговые метрики

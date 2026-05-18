@@ -36,7 +36,8 @@ class GameConfig:
     N_ACTIONS: int = 7
 
     # ── Reward ────────────────────────────────────────────────────────────────
-    INACTION_PENALTY: float = -0.0005    # штраф за HOLD в кэше (нет открытой позиции)
+    INACTION_PENALTY: float = -0.0001    # штраф за HOLD в кэше (нет открытой позиции)
+    CHURN_PENALTY: float = -0.001       # штраф за закрытие позиции менее чем через 5 баров
     LEVERAGE_PENALTY_BASE: float = 0.01  # штраф за плечо > 3x
     DRAWDOWN_PENALTY_SCALE: float = 0.5  # масштаб штрафа за просадку > 10%
 

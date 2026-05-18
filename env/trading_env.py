@@ -16,6 +16,7 @@ from gymnasium import spaces
 from config import CFG
 from env.data_loader import load_dataset
 from env.market_sim import MarketSimulator, Portfolio
+from env.milestones import MilestoneTracker
 
 
 # Соответствие действий → параметрам исполнения
@@ -66,16 +67,20 @@ class TradingEnv(gym.Env):
         self.action_space = spaces.Discrete(CFG.N_ACTIONS)
 
         self.sim: MarketSimulator = MarketSimulator()
+        self.milestones = MilestoneTracker(CFG.STARTING_CAPITAL)
         self._step = 0
         self._start_idx = CFG.LOOKBACK
         self._current_idx = self._start_idx
         self._episode_steps = 0
+        self._bars_in_position = 0
 
     # ─────────────────────────────────────────────────────────────────────────
     def reset(self, *, seed=None, options=None):
         super().reset(seed=seed)
         self.sim.reset()
+        self.milestones.reset()
         self._episode_steps = 0
+        self._bars_in_position = 0
 
         max_start = len(self.data) - CFG.MAX_STEPS_PER_EPISODE - CFG.LOOKBACK
         if self.random_start and max_start > self._start_idx:
@@ -96,10 +101,20 @@ class TradingEnv(gym.Env):
         self.sim.portfolio.update_peak(prices)
 
         action_type, ratio = ACTION_MAP[action]
+        was_in_position = bool(self.sim.portfolio.positions.get(self.symbol) and
+                               self.sim.portfolio.positions[self.symbol].is_open)
         if action_type == "buy":
             self.sim.buy(self.symbol, price, ratio)
         elif action_type == "sell":
             self.sim.sell(self.symbol, price, ratio)
+
+        # Track bars held in position for churn penalty
+        pos_after = self.sim.portfolio.positions.get(self.symbol)
+        now_in_position = bool(pos_after and pos_after.is_open)
+        if now_in_position:
+            self._bars_in_position += 1
+        else:
+            self._bars_in_position = 0
 
         self._current_idx += 1
         self._episode_steps += 1
@@ -114,7 +129,16 @@ class TradingEnv(gym.Env):
             action=action_type,
             prices=new_prices,
             ret_1h=float(row.get("ret_1", 0.0)),
+            was_in_position=was_in_position,
         )
+
+        # Milestone bonus (curriculum learning)
+        milestone_bonus = self.milestones.update(
+            portfolio=new_value,
+            hours_alive=self._episode_steps,
+            n_trades=self.sim.portfolio.n_trades,
+        )
+        reward += milestone_bonus
 
         terminated, reason = self._check_terminal(new_prices)
         truncated = self._episode_steps >= CFG.MAX_STEPS_PER_EPISODE or \
@@ -180,21 +204,20 @@ class TradingEnv(gym.Env):
         action: str,
         prices: dict,
         ret_1h: float,
+        was_in_position: bool = False,
     ) -> float:
         pnl = (new_value - prev_value) / CFG.STARTING_CAPITAL
 
-        # Penalize sitting in cash doing nothing — pushes agent to seek opportunities.
+        # Idle penalty: penalize sitting in cash doing nothing
         pos = self.sim.portfolio.positions.get(self.symbol)
         in_cash = not (pos and pos.is_open)
         if in_cash and action == "hold":
             pnl += CFG.INACTION_PENALTY
 
-        # Quadratic drawdown penalty — teaches capital preservation.
-        dd = self.sim.portfolio.drawdown(prices)
-        if dd > 0.05:
-            pnl -= 3.0 * (dd ** 2)
-        if dd > 0.25:
-            pnl -= 10.0 * dd
+        # Churn penalty: penalize closing a position held for < 5 bars
+        just_closed = was_in_position and in_cash
+        if just_closed and self._bars_in_position < 5:
+            pnl += CFG.CHURN_PENALTY
 
         return float(np.clip(pnl, -1.0, 1.0))
 

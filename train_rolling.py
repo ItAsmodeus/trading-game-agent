@@ -84,10 +84,12 @@ def build_model(train_env) -> PPO:
 
 
 def train_on_window(symbol: str, train_data: pd.DataFrame, timesteps: int,
-                    previous_model: Optional[PPO] = None) -> PPO:
+                    previous_model: Optional[PPO] = None,
+                    reward_mode: str = "pnl") -> PPO:
     def make_env():
         def _init():
-            env = TradingEnv(symbol=symbol, data=train_data, random_start=True, noise_scale=0.02)
+            env = TradingEnv(symbol=symbol, data=train_data, random_start=True,
+                             noise_scale=0.02, reward_mode=reward_mode)
             return Monitor(env)
         return _init
 
@@ -134,9 +136,11 @@ def train_on_window(symbol: str, train_data: pd.DataFrame, timesteps: int,
     return model
 
 
-def eval_on_window(model: PPO, symbol: str, val_data: pd.DataFrame) -> dict:
+def eval_on_window(model: PPO, symbol: str, val_data: pd.DataFrame,
+                   reward_mode: str = "pnl") -> dict:
     """Run agent through full val period (no random start). Returns metrics."""
-    env = TradingEnv(symbol=symbol, data=val_data, random_start=False, noise_scale=0.0)
+    env = TradingEnv(symbol=symbol, data=val_data, random_start=False, noise_scale=0.0,
+                     reward_mode=reward_mode)
 
     returns = []
     drawdowns = []
@@ -164,7 +168,8 @@ def eval_on_window(model: PPO, symbol: str, val_data: pd.DataFrame) -> dict:
 
 
 # ─── Modes ───────────────────────────────────────────────────────────────────
-def walkforward(symbol: str, data_start: str, data_end: str, timesteps: int, slide: int = SLIDE_MONTHS):
+def walkforward(symbol: str, data_start: str, data_end: str, timesteps: int,
+                slide: int = SLIDE_MONTHS, reward_mode: str = "pnl"):
     Path(CFG.MODELS_DIR).mkdir(exist_ok=True)
     windows = list(date_windows(data_start, data_end, slide))
 
@@ -195,9 +200,9 @@ def walkforward(symbol: str, data_start: str, data_end: str, timesteps: int, sli
 
         tl_flag = " [TL]" if previous_model is not None else ""
         print(f"{prefix} | train={len(train_data)}rows{tl_flag} ... ", end="", flush=True)
-        model = train_on_window(symbol, train_data, timesteps, previous_model)
+        model = train_on_window(symbol, train_data, timesteps, previous_model, reward_mode)
         previous_model = model
-        metrics = eval_on_window(model, symbol, val_data)
+        metrics = eval_on_window(model, symbol, val_data, reward_mode)
 
         ret = metrics["mean_return"]
         results.append({"i": i + 1, "val_end": val_end, **metrics})
@@ -276,12 +281,15 @@ if __name__ == "__main__":
                         help="Walk-forward start (walkforward mode only)")
     parser.add_argument("--data_end",   default="2026-05-01",
                         help="Walk-forward end (walkforward mode only)")
-    parser.add_argument("--timesteps",  type=int, default=TIMESTEPS_PER_WINDOW)
-    parser.add_argument("--slide",      type=int, default=SLIDE_MONTHS,
+    parser.add_argument("--timesteps",   type=int, default=TIMESTEPS_PER_WINDOW)
+    parser.add_argument("--slide",       type=int, default=SLIDE_MONTHS,
                         help="Months to slide window forward per iteration")
+    parser.add_argument("--reward_mode", choices=["pnl", "sharpe"], default="pnl",
+                        help="Reward signal: pnl (default) or rolling Sharpe ratio")
     args = parser.parse_args()
 
     if args.mode == "walkforward":
-        walkforward(args.symbol, args.data_start, args.data_end, args.timesteps, args.slide)
+        walkforward(args.symbol, args.data_start, args.data_end, args.timesteps,
+                    args.slide, args.reward_mode)
     else:
         latest(args.symbol, args.timesteps)

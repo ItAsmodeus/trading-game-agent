@@ -6,6 +6,7 @@ TradingEnv — OpenAI Gymnasium среда.
 from __future__ import annotations
 
 import random
+from collections import deque
 from typing import Optional
 
 import gymnasium as gym
@@ -52,12 +53,15 @@ class TradingEnv(gym.Env):
         data: Optional[pd.DataFrame] = None,
         random_start: bool = True,
         noise_scale: float = 0.0,
+        reward_mode: str = "pnl",  # "pnl" or "sharpe"
     ):
         super().__init__()
         self.symbol = symbol
         self.split = split
         self.random_start = random_start
         self.noise_scale = noise_scale
+        self.reward_mode = reward_mode
+        self._pnl_buffer: deque = deque(maxlen=20)
 
         self.data = data if data is not None else load_dataset(symbol, split=split)
         self.feature_cols = [c for c in self.data.columns if c not in ("open", "high", "low", "close", "volume", "close_raw")]
@@ -88,6 +92,7 @@ class TradingEnv(gym.Env):
         self.milestones.reset()
         self._episode_steps = 0
         self._bars_in_position = 0
+        self._pnl_buffer.clear()
 
         max_start = len(self.data) - CFG.MAX_STEPS_PER_EPISODE - CFG.LOOKBACK
         if self.random_start and max_start > self._start_idx:
@@ -222,23 +227,35 @@ class TradingEnv(gym.Env):
         ret_1h: float,
         was_in_position: bool = False,
     ) -> float:
-        pnl = (new_value - prev_value) / CFG.STARTING_CAPITAL
+        base_pnl = (new_value - prev_value) / CFG.STARTING_CAPITAL
 
         pos = self.sim.portfolio.positions.get(self.symbol)
         in_cash = not (pos and pos.is_open)
 
-        # Idle penalty: exempt when market volatility is extreme (QUANTUM_SKILL: σ>1.2 → sit out)
+        penalties = 0.0
+        # Idle penalty: exempt when market volatility is extreme (σ>1.2 → sit out)
         if in_cash and action == "hold":
             sigma_raw = self._current_sigma()
             if sigma_raw <= CFG.SIGMA_IDLE_EXEMPT:
-                pnl += CFG.INACTION_PENALTY
+                penalties += CFG.INACTION_PENALTY
 
         # Churn penalty: penalize closing a position held for < CHURN_BARS bars
         just_closed = was_in_position and in_cash
         if just_closed and self._bars_in_position < CFG.CHURN_BARS:
-            pnl += CFG.CHURN_PENALTY
+            penalties += CFG.CHURN_PENALTY
 
-        return float(np.clip(pnl, -1.0, 1.0))
+        if self.reward_mode == "sharpe":
+            self._pnl_buffer.append(base_pnl)
+            if len(self._pnl_buffer) >= 5:
+                buf = np.array(self._pnl_buffer)
+                # Rolling Sharpe scaled to same magnitude as pnl rewards
+                signal = buf.mean() / (buf.std() + 1e-8) * 0.003
+            else:
+                signal = base_pnl
+        else:
+            signal = base_pnl
+
+        return float(np.clip(signal + penalties, -1.0, 1.0))
 
     def _current_sigma(self) -> float:
         """Annualized 20-bar volatility from raw close prices."""

@@ -21,13 +21,19 @@ from env.milestones import MilestoneTracker
 
 # Соответствие действий → параметрам исполнения
 ACTION_MAP = {
-    0: ("hold",  0.00),
-    1: ("buy",   0.25),
-    2: ("buy",   0.50),
-    3: ("buy",   1.00),
-    4: ("sell",  0.25),
-    5: ("sell",  0.50),
-    6: ("sell",  1.00),
+    0:  ("hold",  0.00),
+    1:  ("buy",   0.25),
+    2:  ("buy",   0.50),
+    3:  ("buy",   1.00),
+    4:  ("sell",  0.25),
+    5:  ("sell",  0.50),
+    6:  ("sell",  1.00),
+    7:  ("short", 0.25),
+    8:  ("short", 0.50),
+    9:  ("short", 1.00),
+    10: ("cover", 0.25),
+    11: ("cover", 0.50),
+    12: ("cover", 1.00),
 }
 
 
@@ -59,8 +65,9 @@ class TradingEnv(gym.Env):
         self.all_cols = [c for c in self.data.select_dtypes(include=[np.number]).columns if c != "close_raw"]
         n_features = len(self.all_cols)
 
-        # State: [LOOKBACK × n_features] + [5 portfolio + 4 time features]
-        obs_size = CFG.LOOKBACK * n_features + 9
+        # State: [LOOKBACK × n_features] + [5 portfolio + 6 time features]
+        # time features: ep_progress sin/cos, weekly sin/cos, hour-of-day sin/cos
+        obs_size = CFG.LOOKBACK * n_features + 11
         self.observation_space = spaces.Box(
             low=-10.0, high=10.0, shape=(obs_size,), dtype=np.float32
         )
@@ -107,6 +114,10 @@ class TradingEnv(gym.Env):
             self.sim.buy(self.symbol, price, ratio)
         elif action_type == "sell":
             self.sim.sell(self.symbol, price, ratio)
+        elif action_type == "short":
+            self.sim.short(self.symbol, price, ratio)
+        elif action_type == "cover":
+            self.sim.cover(self.symbol, price, ratio)
 
         # Track bars held in position for churn penalty
         pos_after = self.sim.portfolio.positions.get(self.symbol)
@@ -170,7 +181,9 @@ class TradingEnv(gym.Env):
         unrealized_pnl = 0.0
         if pos and pos.is_open:
             pos_value = pos.value(prices[self.symbol])
-            position_ratio = pos_value / max(portfolio_value, 1.0)
+            ratio = pos_value / max(portfolio_value, 1.0)
+            # Signed: positive = long, negative = short
+            position_ratio = ratio if pos.side == "long" else -ratio
             unrealized_pnl = pos.unrealized_pnl(prices[self.symbol]) / max(portfolio_value, 1.0)
 
         cash_ratio = self.sim.portfolio.cash / max(portfolio_value, 1.0)
@@ -182,14 +195,17 @@ class TradingEnv(gym.Env):
             dtype=np.float32,
         )
 
-        # Time features: episode progress + weekly cycle (168h = 1 week on 1h candles)
+        # Time features: episode progress + weekly cycle + hour-of-day (H-009)
         ep_progress = self._episode_steps / max(CFG.MAX_STEPS_PER_EPISODE, 1)
         weekly_phase = (self._current_idx % 168) / 168.0
+        hour_of_day = self.data.index[self._current_idx].hour / 24.0
         time_obs = np.array([
             np.sin(2 * np.pi * ep_progress),
             np.cos(2 * np.pi * ep_progress),
             np.sin(2 * np.pi * weekly_phase),
             np.cos(2 * np.pi * weekly_phase),
+            np.sin(2 * np.pi * hour_of_day),   # hour-of-day cycle
+            np.cos(2 * np.pi * hour_of_day),
         ], dtype=np.float32)
 
         obs = np.concatenate([market_obs, portfolio_obs, time_obs])
@@ -208,18 +224,30 @@ class TradingEnv(gym.Env):
     ) -> float:
         pnl = (new_value - prev_value) / CFG.STARTING_CAPITAL
 
-        # Idle penalty: penalize sitting in cash doing nothing
         pos = self.sim.portfolio.positions.get(self.symbol)
         in_cash = not (pos and pos.is_open)
-        if in_cash and action == "hold":
-            pnl += CFG.INACTION_PENALTY
 
-        # Churn penalty: penalize closing a position held for < 5 bars
+        # Idle penalty: exempt when market volatility is extreme (QUANTUM_SKILL: σ>1.2 → sit out)
+        if in_cash and action == "hold":
+            sigma_raw = self._current_sigma()
+            if sigma_raw <= CFG.SIGMA_IDLE_EXEMPT:
+                pnl += CFG.INACTION_PENALTY
+
+        # Churn penalty: penalize closing a position held for < CHURN_BARS bars
         just_closed = was_in_position and in_cash
-        if just_closed and self._bars_in_position < 5:
+        if just_closed and self._bars_in_position < CFG.CHURN_BARS:
             pnl += CFG.CHURN_PENALTY
 
         return float(np.clip(pnl, -1.0, 1.0))
+
+    def _current_sigma(self) -> float:
+        """Annualized 20-bar volatility from raw close prices."""
+        start = max(0, self._current_idx - 21)
+        closes = self.data["close_raw"].iloc[start:self._current_idx]
+        if len(closes) < 2:
+            return 0.5
+        log_rets = np.log(closes / closes.shift(1)).dropna()
+        return float(log_rets.std() * np.sqrt(24 * 365))
 
     def _check_terminal(self, prices: dict) -> tuple[bool, str]:
         value = self.sim.portfolio.total_value(prices)

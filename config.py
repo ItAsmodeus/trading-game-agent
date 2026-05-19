@@ -26,20 +26,30 @@ class GameConfig:
     N_FEATURES: int = 18     # признаков на свечу (OHLCV + 13 индикаторов)
 
     # ── Action space (дискретные) ─────────────────────────────────────────────
-    # 0: HOLD
-    # 1: BUY  25%  капитала
-    # 2: BUY  50%  капитала
-    # 3: BUY  100% капитала
-    # 4: SELL 25%  позиции
-    # 5: SELL 50%  позиции
-    # 6: SELL 100% позиции (CLOSE)
-    N_ACTIONS: int = 7
+    # 0:  HOLD
+    # 1:  BUY   25%  капитала     (лонг)
+    # 2:  BUY   50%  капитала
+    # 3:  BUY   100% капитала
+    # 4:  SELL  25%  позиции      (закрыть часть лонга)
+    # 5:  SELL  50%  позиции
+    # 6:  SELL  100% позиции
+    # 7:  SHORT 25%  капитала     (шорт)
+    # 8:  SHORT 50%  капитала
+    # 9:  SHORT 100% капитала
+    # 10: COVER 25%  шорт-позиции (закрыть часть шорта)
+    # 11: COVER 50%  шорт-позиции
+    # 12: COVER 100% шорт-позиции
+    N_ACTIONS: int = 13
 
     # ── Reward ────────────────────────────────────────────────────────────────
     INACTION_PENALTY: float = -0.0001    # штраф за HOLD в кэше (нет открытой позиции)
-    CHURN_PENALTY: float = -0.001       # штраф за закрытие позиции менее чем через 5 баров
-    LEVERAGE_PENALTY_BASE: float = 0.01  # штраф за плечо > 3x
-    DRAWDOWN_PENALTY_SCALE: float = 0.5  # масштаб штрафа за просадку > 10%
+    CHURN_PENALTY: float = -0.003        # штраф за закрытие позиции менее чем через CHURN_BARS баров
+    CHURN_BARS: int = 10                 # порог чёрна (v5+)
+    # Волатильный фильтр (QUANTUM_SKILL от main bot):
+    # если σ(20) annualized > порога — не штрафуем за бездействие (сидеть в кэше — правильно)
+    SIGMA_IDLE_EXEMPT: float = 1.2       # annualized vol > 120% → idle penalty = 0
+    LEVERAGE_PENALTY_BASE: float = 0.01
+    DRAWDOWN_PENALTY_SCALE: float = 0.5
 
     # ── Ограничения риска ─────────────────────────────────────────────────────
     MAX_POSITION_RATIO: float = 0.95     # не более 95% капитала в позиции

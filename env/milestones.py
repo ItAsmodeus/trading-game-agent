@@ -26,27 +26,25 @@ class Milestone:
 
 
 MILESTONE_CATALOG = [
-    # Капитал — промежуточные цели
-    Milestone("first_profit",  10_100,  "capital", 0.02),
-    Milestone("up_10pct",      11_000,  "capital", 0.04),
-    Milestone("up_25pct",      12_500,  "capital", 0.08),
-    Milestone("up_50pct",      15_000,  "capital", 0.15),
-    Milestone("double",        20_000,  "capital", 0.25),
+    # Капитал — бонусы между v4 (слишком высокие) и v5 (слишком низкие)
+    Milestone("first_profit",  10_100,  "capital", 0.015),
+    Milestone("up_10pct",      11_000,  "capital", 0.03),
+    Milestone("up_25pct",      12_500,  "capital", 0.06),
+    Milestone("up_50pct",      15_000,  "capital", 0.10),
+    Milestone("double",        20_000,  "capital", 0.15),
 
-    # Выживание в часах (1h свечи)
-    Milestone("survive_168",   168,  "hours", 0.03),   # 1 неделя
-    Milestone("survive_720",   720,  "hours", 0.06),   # 1 месяц
-    Milestone("survive_2160",  2160, "hours", 0.12),   # 3 месяца
+    # Выживание в часах (1h свечи) — повышены: reward за сохранение капитала
+    Milestone("survive_168",   168,  "hours", 0.04),   # 1 неделя
+    Milestone("survive_720",   720,  "hours", 0.08),   # 1 месяц
+    Milestone("survive_2160",  2160, "hours", 0.15),   # 3 месяца
 
-    # Серия прибыльных сделок
+    # Серия прибыльных часов
     Milestone("streak_3",  3,  "streak", 0.02),
-    Milestone("streak_5",  5,  "streak", 0.05),
-    Milestone("streak_10", 10, "streak", 0.10),
+    Milestone("streak_5",  5,  "streak", 0.04),
+    Milestone("streak_10", 10, "streak", 0.08),
 
-    # Активность
-    Milestone("trades_10",  10,  "trades", 0.01),
-    Milestone("trades_50",  50,  "trades", 0.03),
-    Milestone("trades_100", 100, "trades", 0.05),
+    # Минимальная активность — trades_50/100 удалены (v5: поощряли оверторговлю)
+    Milestone("trades_10",  10,  "trades", 0.005),
 ]
 
 

@@ -223,6 +223,26 @@ def add_features(df: pd.DataFrame) -> pd.DataFrame:
     d["vwap_dev"] = (c - (typical * d["volume"]).rolling(20).sum() /
                      d["volume"].rolling(20).sum().replace(0, np.nan)) / c
 
+    # ── H-006: Log-Normal Z-Score Features (Quantum Leap inspired) ───────────
+    # Log returns for drift and vol estimation
+    log_ret = np.log(c / c.shift(1))
+
+    # 60-bar log drift (natural drift per 1h bar ≈ 2.5 days window)
+    d["mu_60"] = log_ret.rolling(60).mean().clip(-0.05, 0.05)
+
+    # 20-bar annualized volatility (1h data: annualize by sqrt(24*365) ≈ 93.6)
+    d["sigma_20"] = log_ret.rolling(20).std() * np.sqrt(24 * 365)
+    d["sigma_20"] = d["sigma_20"].clip(0, 3)
+
+    # Z-score: how far is price from its GBM "expected" value
+    expected = c.shift(1) * np.exp(d["mu_60"])
+    sigma_price = d["sigma_20"] * c / np.sqrt(24 * 365)  # per-bar vol in price units
+    d["z_score_ln"] = ((c - expected) / sigma_price.replace(0, np.nan)).clip(-3, 3)
+
+    # Market regime: price deviation from MA200 (200h ≈ 8 days)
+    ma200 = c.rolling(200).mean()
+    d["regime"] = ((c - ma200) / ma200.replace(0, np.nan)).clip(-0.5, 0.5)
+
     d = d.dropna()
     return d
 

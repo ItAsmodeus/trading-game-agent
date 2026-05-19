@@ -93,8 +93,17 @@ def train_on_window(symbol: str, train_data: pd.DataFrame, timesteps: int,
 
     train_env = SubprocVecEnv([make_env() for _ in range(N_ENVS)])
 
+    use_tl = False
     if previous_model is not None:
-        # Transfer learning: copy weights, use smaller LR for fine-tuning
+        # Verify obs_size compatibility before transfer learning
+        prev_obs = previous_model.observation_space.shape[0]
+        curr_obs = train_env.observation_space.shape[0]
+        if prev_obs == curr_obs:
+            use_tl = True
+        else:
+            print(f"[warn] obs_size mismatch ({prev_obs} vs {curr_obs}), skipping TL")
+
+    if use_tl:
         model = PPO(
             "MlpPolicy", train_env,
             verbose=0,
@@ -110,7 +119,12 @@ def train_on_window(symbol: str, train_data: pd.DataFrame, timesteps: int,
             max_grad_norm=0.5,
             policy_kwargs=dict(net_arch=dict(pi=[256, 128, 64], vf=[256, 128, 64])),
         )
-        model.policy.load_state_dict(copy.deepcopy(previous_model.policy.state_dict()))
+        try:
+            model.policy.load_state_dict(copy.deepcopy(previous_model.policy.state_dict()))
+        except RuntimeError:
+            # Action space changed between windows — skip TL, train fresh
+            print("  [TL skip] policy shape mismatch — training from scratch", flush=True)
+            model = build_model(train_env)
         model.learn(total_timesteps=timesteps, progress_bar=False, reset_num_timesteps=False)
     else:
         model = build_model(train_env)

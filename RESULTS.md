@@ -14,7 +14,7 @@
 | Our v3 (TL+DD+Time+OBI+FR) | agent2/dev | -0.788 | — | — | ❌ DD penalty слишком агрессивный → 0 сделок |
 | Our v4 (no-DD, milestones, churn, 300k) | agent2/dev | **+0.193** | +1.72% | 59% (10/17) | obs=1329, best win: +20.57% (BTC bull), worst: -14.37% (2025 bear) |
 | Our v5 (H-006+H-007+H-008: z_score+soft_stop+anti-churn) | agent2/dev | 📋 плановый | — | — | obs ~1569, CHURN_BARS=10, SOFT_STOP_PCT=5%, старт сейчас |
-| Our v6 (no-soft-stop, SIGMA_IDLE_EXEMPT, H-009 hour-of-day) | agent2/dev | 🔄 В процессе (~17/23 окон) | — | — | Убран soft stop (0-trade trap), σ>1.2→idle exempt, obs=1571 |
+| Our v6 (no-soft-stop, SIGMA_IDLE_EXEMPT, H-009 hour-of-day) | agent2/dev | **0.308** | +2.01% | 63% (12/19) | 19/23 окон (крэш на окне 20 из-за TL shape mismatch при смене N_ACTIONS 7→13); best +11.60%, worst -8.67% |
 | Our v7 (v6 + SHORT/COVER capability) | agent2/dev | 📋 Запланирован | — | — | 13 actions, signed position_ratio, market_sim.py с short/cover. Smoke test ✅ |
 
 ---

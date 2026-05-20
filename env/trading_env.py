@@ -137,6 +137,19 @@ class TradingEnv(gym.Env):
 
         new_price = float(self.data["close_raw"].iloc[self._current_idx])
         new_prices = {self.symbol: new_price}
+
+        # Hard stop-loss: auto-close position when unrealized loss > 15% of portfolio
+        pos_check = self.sim.portfolio.positions.get(self.symbol)
+        if pos_check and pos_check.is_open:
+            portfolio_val = self.sim.portfolio.total_value(new_prices)
+            unrealized_loss = -pos_check.unrealized_pnl(new_price) / max(portfolio_val, 1.0)
+            if unrealized_loss > CFG.HARD_STOP_LOSS:
+                if pos_check.side == "long":
+                    self.sim.sell(self.symbol, new_price, 1.0)
+                else:
+                    self.sim.cover(self.symbol, new_price, 1.0)
+                self._bars_in_position = 0
+
         new_value = self.sim.portfolio.total_value(new_prices)
 
         reward = self._compute_reward(

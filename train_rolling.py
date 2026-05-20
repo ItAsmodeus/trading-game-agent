@@ -128,9 +128,22 @@ def train_on_window(symbol: str, train_data: pd.DataFrame, timesteps: int,
             policy_kwargs=dict(net_arch=dict(pi=[256, 128, 64], vf=[256, 128, 64])),
         )
         try:
-            model.policy.load_state_dict(copy.deepcopy(previous_model.policy.state_dict()))
+            prev_sd = copy.deepcopy(previous_model.policy.state_dict())
+            curr_sd = model.policy.state_dict()
+            # Partial TL: copy feature extraction layers only, reset action head
+            # to avoid transferring directional bias between market regimes
+            loaded, skipped = 0, 0
+            for k in prev_sd:
+                if k in curr_sd and curr_sd[k].shape == prev_sd[k].shape \
+                        and not k.startswith("action_net"):
+                    curr_sd[k] = prev_sd[k]
+                    loaded += 1
+                else:
+                    skipped += 1
+            model.policy.load_state_dict(curr_sd)
+            print(f"  [TL] loaded={loaded} reset_action_head={skipped}", flush=True)
         except RuntimeError:
-            print("  [TL skip] policy shape mismatch — training from scratch", flush=True)
+            print("  [TL skip] shape mismatch — training from scratch", flush=True)
             model = build_model(train_env, tb_log)
         model.learn(total_timesteps=timesteps, progress_bar=False,
                     reset_num_timesteps=False, tb_log_name=f"window_{window_idx:02d}")

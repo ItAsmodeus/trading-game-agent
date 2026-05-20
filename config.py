@@ -50,6 +50,7 @@ class GameConfig:
     SIGMA_IDLE_EXEMPT: float = 1.2       # annualized vol > 120% → idle penalty = 0
     LEVERAGE_PENALTY_BASE: float = 0.01
     DRAWDOWN_PENALTY_SCALE: float = 0.5
+    HARD_STOP_LOSS: float = 0.15     # auto-close position when unrealized loss > 15% of portfolio
 
     # ── Ограничения риска ─────────────────────────────────────────────────────
     MAX_POSITION_RATIO: float = 0.95     # не более 95% капитала в позиции

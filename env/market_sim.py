@@ -97,6 +97,8 @@ class MarketSimulator:
         size = net_cash / exec_price
 
         pos = self.portfolio.positions.get(symbol)
+        if pos and pos.is_open and pos.side == "short":
+            return {"executed": False, "reason": "close_short_first"}
         if pos and pos.is_open and pos.side == "long":
             # Усреднение: пересчитываем среднюю цену входа
             total_size = pos.size + size

@@ -156,7 +156,7 @@ def train_on_window(symbol: str, train_data: pd.DataFrame, timesteps: int,
     return model
 
 
-def eval_on_window(model: PPO, symbol: str, val_data: pd.DataFrame,
+def eval_on_window(model: MaskablePPO, symbol: str, val_data: pd.DataFrame,
                    reward_mode: str = "pnl") -> dict:
     """Run agent through full val period (no random start). Returns metrics."""
     env = TradingEnv(symbol=symbol, data=val_data, random_start=False, noise_scale=0.0,
@@ -170,7 +170,8 @@ def eval_on_window(model: PPO, symbol: str, val_data: pd.DataFrame,
         obs, _ = env.reset()
         done = False
         while not done:
-            action, _ = model.predict(obs, deterministic=True)
+            action, _ = model.predict(obs, deterministic=True,
+                                      action_masks=env.action_masks())
             obs, _, terminated, truncated, info = env.step(int(action))
             done = terminated or truncated
 

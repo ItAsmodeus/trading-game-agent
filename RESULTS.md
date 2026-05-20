@@ -15,7 +15,9 @@
 | Our v4 (no-DD, milestones, churn, 300k) | agent2/dev | **+0.193** | +1.72% | 59% (10/17) | obs=1329, best win: +20.57% (BTC bull), worst: -14.37% (2025 bear) |
 | Our v5 (H-006+H-007+H-008: z_score+soft_stop+anti-churn) | agent2/dev | 📋 плановый | — | — | obs ~1569, CHURN_BARS=10, SOFT_STOP_PCT=5%, старт сейчас |
 | Our v6 (no-soft-stop, SIGMA_IDLE_EXEMPT, H-009 hour-of-day) | agent2/dev | **0.308** | +2.01% | 63% (12/19) | 19/23 окон (крэш на окне 20 из-за TL shape mismatch при смене N_ACTIONS 7→13); best +11.60%, worst -8.67% |
-| Our v7 (v6 + SHORT/COVER capability) | agent2/dev | 📋 Запланирован | — | — | 13 actions, signed position_ratio, market_sim.py с short/cover. Smoke test ✅ |
+| Our v7 (v6 + SHORT/COVER capability) | agent2/dev | **+0.379** | +2.67% | 68% (13/19) | 13 actions, SHORT capability. Best window: +18.6% |
+| Our v7.1 (500k steps) | agent2/dev | 0.365 | +2.54% | 65% (13/20) | More steps hurt — overfitting |
+| Our v7.2 (ActionMasker + F&G + ma_cross) | agent2/dev | **-0.284** ❌ | -3.81% | 35% (8/23) | F&G = noise at 1h; obs 1691 too big for 300k steps |
 
 ---
 

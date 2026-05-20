@@ -69,9 +69,9 @@ class TradingEnv(gym.Env):
         self.all_cols = [c for c in self.data.select_dtypes(include=[np.number]).columns if c != "close_raw"]
         n_features = len(self.all_cols)
 
-        # State: [LOOKBACK × n_features] + [5 portfolio + 6 time features]
-        # time features: ep_progress sin/cos, weekly sin/cos, hour-of-day sin/cos
-        obs_size = CFG.LOOKBACK * n_features + 11
+        # State: [current bar features] + [5 portfolio + 6 time features]
+        # LSTM carries temporal memory — no LOOKBACK window needed in obs
+        obs_size = n_features + 11
         self.observation_space = spaces.Box(
             low=-10.0, high=10.0, shape=(obs_size,), dtype=np.float32
         )
@@ -186,10 +186,7 @@ class TradingEnv(gym.Env):
 
     # ─────────────────────────────────────────────────────────────────────────
     def _get_obs(self) -> np.ndarray:
-        window = self.data[self.all_cols].iloc[
-            self._current_idx - CFG.LOOKBACK: self._current_idx
-        ].values.astype(np.float32)
-        market_obs = window.flatten()
+        market_obs = self.data[self.all_cols].iloc[self._current_idx].values.astype(np.float32)
 
         prices = {self.symbol: float(self.data["close_raw"].iloc[self._current_idx])}
         portfolio_value = self.sim.portfolio.total_value(prices)

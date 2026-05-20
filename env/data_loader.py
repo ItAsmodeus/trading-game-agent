@@ -327,14 +327,6 @@ def load_dataset(
     """Возвращает нормализованный датасет для нужного сплита."""
     raw = fetch_ohlcv(symbol, timeframe)
 
-    # Fear & Greed Index
-    fg = fetch_fear_greed(since=CFG.TRAIN_START, until=CFG.TEST_END)
-    if fg is not None:
-        raw = raw.join(fg.rename("fear_greed"), how="left")
-        raw["fear_greed"] = raw["fear_greed"].ffill().fillna(0.5)
-    else:
-        raw["fear_greed"] = 0.5
-
     feat = add_features(raw)
 
     splits = {
@@ -388,14 +380,6 @@ def load_window(
             for col in fut.columns:
                 if col in raw.columns:
                     raw[col] = raw[col].ffill()
-
-    # Fear & Greed Index (daily → hourly)
-    fg = fetch_fear_greed(since=train_start, until=val_end)
-    if fg is not None:
-        raw = raw.join(fg.rename("fear_greed"), how="left")
-        raw["fear_greed"] = raw["fear_greed"].ffill().fillna(0.5)
-    else:
-        raw["fear_greed"] = 0.5  # neutral fallback
 
     feat = add_features(raw)
 

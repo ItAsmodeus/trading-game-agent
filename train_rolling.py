@@ -19,8 +19,7 @@ from typing import Optional
 
 import numpy as np
 import pandas as pd
-from sb3_contrib import MaskablePPO
-from sb3_contrib.common.wrappers import ActionMasker
+from sb3_contrib import RecurrentPPO
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 
@@ -66,72 +65,79 @@ def linear_schedule(initial: float, final_frac: float = 0.1):
     return fn
 
 
-def build_model(train_env, tensorboard_log: str = "logs/tensorboard/") -> MaskablePPO:
-    return MaskablePPO(
-        "MlpPolicy", train_env,
+def build_model(train_env, tensorboard_log: str = "logs/tensorboard/") -> RecurrentPPO:
+    return RecurrentPPO(
+        "MlpLstmPolicy", train_env,
         verbose=0,
         tensorboard_log=tensorboard_log,
-        learning_rate=linear_schedule(1e-4, 0.1),
-        n_steps=2048,
-        batch_size=512,
-        n_epochs=5,
+        learning_rate=linear_schedule(3e-4, 0.1),
+        n_steps=512,
+        batch_size=64,
+        n_epochs=10,
         gamma=0.99,
         gae_lambda=0.95,
-        clip_range=linear_schedule(0.15, 0.5),
+        clip_range=linear_schedule(0.2, 0.5),
         clip_range_vf=0.2,
-        ent_coef=0.02,
+        ent_coef=0.01,
         max_grad_norm=0.5,
-        policy_kwargs=dict(net_arch=dict(pi=[256, 128, 64], vf=[256, 128, 64])),
+        policy_kwargs=dict(
+            lstm_hidden_size=256,
+            n_lstm_layers=1,
+            shared_lstm=False,
+            enable_critic_lstm=True,
+            net_arch=dict(pi=[64], vf=[64]),
+        ),
     )
 
 
 def train_on_window(symbol: str, train_data: pd.DataFrame, timesteps: int,
-                    previous_model: Optional[MaskablePPO] = None,
+                    previous_model: Optional[RecurrentPPO] = None,
                     reward_mode: str = "pnl",
-                    window_idx: int = 0) -> MaskablePPO:
+                    window_idx: int = 0) -> RecurrentPPO:
     def make_env():
         def _init():
             env = TradingEnv(symbol=symbol, data=train_data, random_start=True,
                              noise_scale=0.02, reward_mode=reward_mode)
-            env = ActionMasker(env, lambda e: e.action_masks())
             return Monitor(env)
         return _init
 
     train_env = SubprocVecEnv([make_env() for _ in range(N_ENVS)])
 
+    tb_log = "logs/tensorboard/"
     use_tl = False
     if previous_model is not None:
-        # Verify obs_size compatibility before transfer learning
         prev_obs = previous_model.observation_space.shape[0]
         curr_obs = train_env.observation_space.shape[0]
-        if prev_obs == curr_obs:
-            use_tl = True
-        else:
+        use_tl = (prev_obs == curr_obs)
+        if not use_tl:
             print(f"[warn] obs_size mismatch ({prev_obs} vs {curr_obs}), skipping TL")
 
-    tb_log = f"logs/tensorboard/"
     if use_tl:
-        model = MaskablePPO(
-            "MlpPolicy", train_env,
+        model = RecurrentPPO(
+            "MlpLstmPolicy", train_env,
             verbose=0,
             tensorboard_log=tb_log,
-            learning_rate=linear_schedule(5e-5, 0.1),
-            n_steps=2048,
-            batch_size=512,
-            n_epochs=5,
+            learning_rate=linear_schedule(1e-4, 0.1),
+            n_steps=512,
+            batch_size=64,
+            n_epochs=10,
             gamma=0.99,
             gae_lambda=0.95,
-            clip_range=linear_schedule(0.1, 0.5),
+            clip_range=linear_schedule(0.15, 0.5),
             clip_range_vf=0.2,
             ent_coef=0.01,
             max_grad_norm=0.5,
-            policy_kwargs=dict(net_arch=dict(pi=[256, 128, 64], vf=[256, 128, 64])),
+            policy_kwargs=dict(
+                lstm_hidden_size=256,
+                n_lstm_layers=1,
+                shared_lstm=False,
+                enable_critic_lstm=True,
+                net_arch=dict(pi=[64], vf=[64]),
+            ),
         )
         try:
             prev_sd = copy.deepcopy(previous_model.policy.state_dict())
             curr_sd = model.policy.state_dict()
-            # Partial TL: copy feature extraction layers only, reset action head
-            # to avoid transferring directional bias between market regimes
             loaded, skipped = 0, 0
             for k in prev_sd:
                 if k in curr_sd and curr_sd[k].shape == prev_sd[k].shape \
@@ -156,7 +162,7 @@ def train_on_window(symbol: str, train_data: pd.DataFrame, timesteps: int,
     return model
 
 
-def eval_on_window(model: MaskablePPO, symbol: str, val_data: pd.DataFrame,
+def eval_on_window(model: RecurrentPPO, symbol: str, val_data: pd.DataFrame,
                    reward_mode: str = "pnl") -> dict:
     """Run agent through full val period (no random start). Returns metrics."""
     env = TradingEnv(symbol=symbol, data=val_data, random_start=False, noise_scale=0.0,
@@ -169,9 +175,16 @@ def eval_on_window(model: MaskablePPO, symbol: str, val_data: pd.DataFrame,
     for _ in range(N_EVAL_EPISODES):
         obs, _ = env.reset()
         done = False
+        lstm_states = None
+        episode_starts = np.ones((1,), dtype=bool)
         while not done:
-            action, _ = model.predict(obs, deterministic=True,
-                                      action_masks=env.action_masks())
+            action, lstm_states = model.predict(
+                obs,
+                state=lstm_states,
+                episode_start=episode_starts,
+                deterministic=True,
+            )
+            episode_starts = np.zeros((1,), dtype=bool)
             obs, _, terminated, truncated, info = env.step(int(action))
             done = terminated or truncated
 
@@ -234,12 +247,12 @@ def walkforward(symbol: str, data_start: str, data_end: str, timesteps: int,
 
         if ret > best_sharpe:
             best_sharpe = ret
-            model_name = symbol.replace("/", "") + "_ppo_rolling_best"
+            model_name = symbol.replace("/", "") + "_lstm_rolling_best"
             best_model_path = str(Path(CFG.MODELS_DIR) / model_name)
             model.save(best_model_path)
 
         # Always overwrite latest model
-        model_name_latest = symbol.replace("/", "") + "_ppo_rolling_latest"
+        model_name_latest = symbol.replace("/", "") + "_lstm_rolling_latest"
         model.save(str(Path(CFG.MODELS_DIR) / model_name_latest))
 
     if not results:
@@ -285,7 +298,7 @@ def latest(symbol: str, timesteps: int):
     model = train_on_window(symbol, train_data, timesteps)
     metrics = eval_on_window(model, symbol, val_data)
 
-    model_name = symbol.replace("/", "") + "_ppo_rolling_latest"
+    model_name = symbol.replace("/", "") + "_lstm_rolling_latest"
     save_path = str(Path(CFG.MODELS_DIR) / model_name)
     model.save(save_path)
 

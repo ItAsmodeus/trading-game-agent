@@ -19,7 +19,8 @@ from typing import Optional
 
 import numpy as np
 import pandas as pd
-from stable_baselines3 import PPO
+from sb3_contrib import MaskablePPO
+from sb3_contrib.common.wrappers import ActionMasker
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 
@@ -65,10 +66,11 @@ def linear_schedule(initial: float, final_frac: float = 0.1):
     return fn
 
 
-def build_model(train_env) -> PPO:
-    return PPO(
+def build_model(train_env, tensorboard_log: str = "logs/tensorboard/") -> MaskablePPO:
+    return MaskablePPO(
         "MlpPolicy", train_env,
         verbose=0,
+        tensorboard_log=tensorboard_log,
         learning_rate=linear_schedule(1e-4, 0.1),
         n_steps=2048,
         batch_size=512,
@@ -84,12 +86,14 @@ def build_model(train_env) -> PPO:
 
 
 def train_on_window(symbol: str, train_data: pd.DataFrame, timesteps: int,
-                    previous_model: Optional[PPO] = None,
-                    reward_mode: str = "pnl") -> PPO:
+                    previous_model: Optional[MaskablePPO] = None,
+                    reward_mode: str = "pnl",
+                    window_idx: int = 0) -> MaskablePPO:
     def make_env():
         def _init():
             env = TradingEnv(symbol=symbol, data=train_data, random_start=True,
                              noise_scale=0.02, reward_mode=reward_mode)
+            env = ActionMasker(env, lambda e: e.action_masks())
             return Monitor(env)
         return _init
 
@@ -105,10 +109,12 @@ def train_on_window(symbol: str, train_data: pd.DataFrame, timesteps: int,
         else:
             print(f"[warn] obs_size mismatch ({prev_obs} vs {curr_obs}), skipping TL")
 
+    tb_log = f"logs/tensorboard/"
     if use_tl:
-        model = PPO(
+        model = MaskablePPO(
             "MlpPolicy", train_env,
             verbose=0,
+            tensorboard_log=tb_log,
             learning_rate=linear_schedule(5e-5, 0.1),
             n_steps=2048,
             batch_size=512,
@@ -124,13 +130,14 @@ def train_on_window(symbol: str, train_data: pd.DataFrame, timesteps: int,
         try:
             model.policy.load_state_dict(copy.deepcopy(previous_model.policy.state_dict()))
         except RuntimeError:
-            # Action space changed between windows — skip TL, train fresh
             print("  [TL skip] policy shape mismatch — training from scratch", flush=True)
-            model = build_model(train_env)
-        model.learn(total_timesteps=timesteps, progress_bar=False, reset_num_timesteps=False)
+            model = build_model(train_env, tb_log)
+        model.learn(total_timesteps=timesteps, progress_bar=False,
+                    reset_num_timesteps=False, tb_log_name=f"window_{window_idx:02d}")
     else:
-        model = build_model(train_env)
-        model.learn(total_timesteps=timesteps, progress_bar=False)
+        model = build_model(train_env, tb_log)
+        model.learn(total_timesteps=timesteps, progress_bar=False,
+                    tb_log_name=f"window_{window_idx:02d}")
 
     train_env.close()
     return model
@@ -180,7 +187,7 @@ def walkforward(symbol: str, data_start: str, data_end: str, timesteps: int,
     results = []
     best_sharpe = -np.inf
     best_model_path = None
-    previous_model: Optional[PPO] = None
+    previous_model: Optional[MaskablePPO] = None
 
     for i, (train_start, train_end, val_end) in enumerate(windows):
         prefix = f"[{i+1:3d}/{len(windows)}] {train_start}->{train_end} val->{val_end}"
@@ -200,7 +207,8 @@ def walkforward(symbol: str, data_start: str, data_end: str, timesteps: int,
 
         tl_flag = " [TL]" if previous_model is not None else ""
         print(f"{prefix} | train={len(train_data)}rows{tl_flag} ... ", end="", flush=True)
-        model = train_on_window(symbol, train_data, timesteps, previous_model, reward_mode)
+        model = train_on_window(symbol, train_data, timesteps, previous_model,
+                                reward_mode, window_idx=i + 1)
         previous_model = model
         metrics = eval_on_window(model, symbol, val_data, reward_mode)
 

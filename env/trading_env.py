@@ -274,6 +274,23 @@ class TradingEnv(gym.Env):
             return True, "LOSS"
         return False, ""
 
+    def action_masks(self) -> np.ndarray:
+        """Valid actions based on current position state (for MaskablePPO)."""
+        mask = np.zeros(CFG.N_ACTIONS, dtype=bool)
+        mask[0] = True  # HOLD always valid
+        pos = self.sim.portfolio.positions.get(self.symbol)
+        if pos and pos.is_open:
+            if pos.side == "long":
+                mask[1:4] = True   # BUY (add to long)
+                mask[4:7] = True   # SELL (close long)
+            elif pos.side == "short":
+                mask[7:10] = True  # SHORT (add to short)
+                mask[10:13] = True # COVER (close short)
+        else:
+            mask[1:4] = True   # BUY (open long)
+            mask[7:10] = True  # SHORT (open short)
+        return mask
+
     def render(self):
         prices = {self.symbol: float(self.data["close_raw"].iloc[self._current_idx])}
         value = self.sim.portfolio.total_value(prices)

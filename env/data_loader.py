@@ -13,12 +13,63 @@ from typing import Optional
 import ccxt
 import numpy as np
 import pandas as pd
+import requests
 
 from config import CFG
 
 
 def _symbol_to_filename(symbol: str, timeframe: str) -> str:
     return symbol.replace("/", "") + f"_{timeframe}.parquet"
+
+
+def fetch_fear_greed(
+    since: str,
+    until: str,
+    data_dir: str = CFG.DATA_DIR,
+) -> Optional[pd.Series]:
+    """
+    Fear & Greed Index from Alternative.me (free, no API key).
+    Daily values (0-100) resampled to 1h via forward-fill.
+    Cached to data/fear_greed.parquet.
+    """
+    cache_path = Path(data_dir) / "fear_greed.parquet"
+
+    if cache_path.exists():
+        age_hours = (time.time() - cache_path.stat().st_mtime) / 3600
+        if age_hours < 24:
+            cached = pd.read_parquet(cache_path)["fear_greed"]
+            since_ts = pd.Timestamp(since, tz="UTC")
+            until_ts = pd.Timestamp(until, tz="UTC")
+            if cached.index[0] <= since_ts + pd.Timedelta("7d") and \
+               cached.index[-1] >= until_ts - pd.Timedelta("2d"):
+                return cached
+
+    try:
+        days = (pd.Timestamp(until) - pd.Timestamp(since)).days + 30
+        days = min(days, 2000)  # API limit
+        url = f"https://api.alternative.me/fng/?limit={days}&format=json"
+        resp = requests.get(url, timeout=15)
+        data = resp.json()["data"]
+
+        records = []
+        for item in data:
+            ts = pd.Timestamp(int(item["timestamp"]), unit="s", tz="UTC").normalize()
+            val = float(item["value"]) / 100.0  # normalize to [0, 1]
+            records.append({"ts": ts, "fear_greed": val})
+
+        df = pd.DataFrame(records).set_index("ts").sort_index()
+        df = df[~df.index.duplicated(keep="first")]
+        # Resample daily → hourly with forward-fill
+        df = df.resample("1h").ffill()
+
+        Path(data_dir).mkdir(exist_ok=True)
+        df.to_parquet(cache_path)
+        print(f"  F&G: {len(df)} hourly records fetched")
+        return df["fear_greed"]
+
+    except Exception as e:
+        print(f"  [warn] Fear & Greed unavailable: {e}")
+        return None
 
 
 def fetch_ohlcv(
@@ -243,6 +294,9 @@ def add_features(df: pd.DataFrame) -> pd.DataFrame:
     ma200 = c.rolling(200).mean()
     d["regime"] = ((c - ma200) / ma200.replace(0, np.nan)).clip(-0.5, 0.5)
 
+    # MA cross: MA20 vs MA50 (trend direction signal, same as main bot feature 26)
+    d["ma_cross"] = ((d["ma20"] - d["ma50"]) / d["ma50"].replace(0, np.nan)).clip(-0.5, 0.5)
+
     d = d.dropna()
     return d
 
@@ -272,6 +326,15 @@ def load_dataset(
 ) -> pd.DataFrame:
     """Возвращает нормализованный датасет для нужного сплита."""
     raw = fetch_ohlcv(symbol, timeframe)
+
+    # Fear & Greed Index
+    fg = fetch_fear_greed(since=CFG.TRAIN_START, until=CFG.TEST_END)
+    if fg is not None:
+        raw = raw.join(fg.rename("fear_greed"), how="left")
+        raw["fear_greed"] = raw["fear_greed"].ffill().fillna(0.5)
+    else:
+        raw["fear_greed"] = 0.5
+
     feat = add_features(raw)
 
     splits = {
@@ -322,10 +385,17 @@ def load_window(
         fut = fetch_futures_features(symbol, since=train_start, until=val_end)
         if fut is not None:
             raw = raw.join(fut, how="left")
-            # Forward-fill futures columns so dropna() in add_features doesn't lose rows
             for col in fut.columns:
                 if col in raw.columns:
                     raw[col] = raw[col].ffill()
+
+    # Fear & Greed Index (daily → hourly)
+    fg = fetch_fear_greed(since=train_start, until=val_end)
+    if fg is not None:
+        raw = raw.join(fg.rename("fear_greed"), how="left")
+        raw["fear_greed"] = raw["fear_greed"].ffill().fillna(0.5)
+    else:
+        raw["fear_greed"] = 0.5  # neutral fallback
 
     feat = add_features(raw)
 

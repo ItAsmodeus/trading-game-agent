@@ -26,6 +26,7 @@ from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 from config import CFG
 from env.data_loader import load_window
 from env.trading_env import TradingEnv
+from env.self_play_env import SelfPlayTradingEnv
 
 
 # ─── Rolling window parameters ──────────────────────────────────────────────
@@ -33,7 +34,7 @@ TRAIN_MONTHS  = 6
 VAL_MONTHS    = 1
 SLIDE_MONTHS  = 2     # default: slide 2 months (fewer windows, faster)
 TIMESTEPS_PER_WINDOW = 200_000
-N_ENVS        = 4
+N_ENVS        = 2  # LSTM: fewer envs avoids memory pressure vs MLP
 N_EVAL_EPISODES = 1   # one full-period run per val window (deterministic)
 
 MIN_TRAIN_ROWS = CFG.LOOKBACK + CFG.MAX_STEPS_PER_EPISODE + 50
@@ -96,12 +97,20 @@ def train_on_window(symbol: str, train_data: pd.DataFrame, timesteps: int,
                     window_idx: int = 0) -> RecurrentPPO:
     def make_env():
         def _init():
-            env = TradingEnv(symbol=symbol, data=train_data, random_start=True,
-                             noise_scale=0.02, reward_mode=reward_mode)
+            if previous_model is not None:
+                env = SelfPlayTradingEnv(
+                    symbol=symbol, data=train_data, random_start=True,
+                    noise_scale=0.02, reward_mode=reward_mode,
+                    opponent_model=previous_model,
+                )
+            else:
+                env = TradingEnv(symbol=symbol, data=train_data, random_start=True,
+                                 noise_scale=0.02, reward_mode=reward_mode)
             return Monitor(env)
         return _init
 
-    train_env = SubprocVecEnv([make_env() for _ in range(N_ENVS)])
+    # DummyVecEnv: avoids Windows SubprocVecEnv pickling issues with LSTM opponent
+    train_env = DummyVecEnv([make_env() for _ in range(N_ENVS)])
 
     tb_log = "logs/tensorboard/"
     use_tl = False
@@ -214,7 +223,7 @@ def walkforward(symbol: str, data_start: str, data_end: str, timesteps: int,
     results = []
     best_sharpe = -np.inf
     best_model_path = None
-    previous_model: Optional[MaskablePPO] = None
+    previous_model: Optional[RecurrentPPO] = None
 
     for i, (train_start, train_end, val_end) in enumerate(windows):
         prefix = f"[{i+1:3d}/{len(windows)}] {train_start}->{train_end} val->{val_end}"
@@ -234,10 +243,14 @@ def walkforward(symbol: str, data_start: str, data_end: str, timesteps: int,
 
         tl_flag = " [TL]" if previous_model is not None else ""
         print(f"{prefix} | train={len(train_data)}rows{tl_flag} ... ", end="", flush=True)
-        model = train_on_window(symbol, train_data, timesteps, previous_model,
-                                reward_mode, window_idx=i + 1)
-        previous_model = model
-        metrics = eval_on_window(model, symbol, val_data, reward_mode)
+        try:
+            model = train_on_window(symbol, train_data, timesteps, previous_model,
+                                    reward_mode, window_idx=i + 1)
+            previous_model = model
+            metrics = eval_on_window(model, symbol, val_data, reward_mode)
+        except Exception as e:
+            print(f"ERROR: {e} — skipping window", flush=True)
+            continue
 
         ret = metrics["mean_return"]
         results.append({"i": i + 1, "val_end": val_end, **metrics})

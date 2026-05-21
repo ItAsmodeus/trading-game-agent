@@ -297,6 +297,26 @@ def add_features(df: pd.DataFrame) -> pd.DataFrame:
     # MA cross: MA20 vs MA50 (trend direction signal, same as main bot feature 26)
     d["ma_cross"] = ((d["ma20"] - d["ma50"]) / d["ma50"].replace(0, np.nan)).clip(-0.5, 0.5)
 
+    # ── H-013: Liquidation Cascade Proxy ─────────────────────────────────────
+    # Mechanism: forced liquidations = abnormal volume + abnormal price move together.
+    # After a liquidation cascade exhausts itself, price tends to rebound —
+    # this is a causal signal, not a lagging indicator.
+    vol_z = (d["volume"] - d["volume"].rolling(24).mean()) / \
+            d["volume"].rolling(24).std().replace(0, np.nan)
+    ret_abs = d["ret_1"].abs()
+    ret_z = (ret_abs - ret_abs.rolling(24).mean()) / \
+            ret_abs.rolling(24).std().replace(0, np.nan)
+
+    # Intensity: both volume AND return must be abnormal (multiplicative gate)
+    liq_intensity = (vol_z.clip(0) * ret_z.clip(0)).clip(0, 10)
+
+    # Signed: positive = long liquidations (price fell → buy signal for rebound)
+    #         negative = short liquidations (price rose → sell signal for reversal)
+    d["liq_signal"] = (liq_intensity * -np.sign(d["ret_1"])).clip(-5, 5)
+
+    # Memory: was there a liquidation event in the last 3 bars?
+    d["liq_recent"] = liq_intensity.rolling(3).max().clip(0, 10)
+
     d = d.dropna()
     return d
 

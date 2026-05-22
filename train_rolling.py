@@ -212,7 +212,8 @@ def eval_on_window(model: RecurrentPPO, symbol: str, val_data: pd.DataFrame,
 
 # ─── Modes ───────────────────────────────────────────────────────────────────
 def walkforward(symbol: str, data_start: str, data_end: str, timesteps: int,
-                slide: int = SLIDE_MONTHS, reward_mode: str = "pnl"):
+                slide: int = SLIDE_MONTHS, reward_mode: str = "pnl",
+                resume_model: Optional[str] = None):
     Path(CFG.MODELS_DIR).mkdir(exist_ok=True)
     windows = list(date_windows(data_start, data_end, slide))
 
@@ -224,6 +225,13 @@ def walkforward(symbol: str, data_start: str, data_end: str, timesteps: int,
     best_sharpe = -np.inf
     best_model_path = None
     previous_model: Optional[RecurrentPPO] = None
+
+    if resume_model:
+        try:
+            previous_model = RecurrentPPO.load(resume_model)
+            print(f"Resumed from: {resume_model}\n")
+        except Exception as e:
+            print(f"[warn] Could not load resume model: {e}")
 
     for i, (train_start, train_end, val_end) in enumerate(windows):
         prefix = f"[{i+1:3d}/{len(windows)}] {train_start}->{train_end} val->{val_end}"
@@ -334,10 +342,12 @@ if __name__ == "__main__":
                         help="Months to slide window forward per iteration")
     parser.add_argument("--reward_mode", choices=["pnl", "sharpe"], default="pnl",
                         help="Reward signal: pnl (default) or rolling Sharpe ratio")
+    parser.add_argument("--resume_model", default=None,
+                        help="Path to saved model zip to use as starting point (for resuming runs)")
     args = parser.parse_args()
 
     if args.mode == "walkforward":
         walkforward(args.symbol, args.data_start, args.data_end, args.timesteps,
-                    args.slide, args.reward_mode)
+                    args.slide, args.reward_mode, args.resume_model)
     else:
         latest(args.symbol, args.timesteps)

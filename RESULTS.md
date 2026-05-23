@@ -18,6 +18,9 @@
 | Our v7 (v6 + SHORT/COVER capability) | agent2/dev | **+0.379** | +2.67% | 68% (13/19) | 13 actions, SHORT capability. Best window: +18.6% |
 | Our v7.1 (500k steps) | agent2/dev | 0.365 | +2.54% | 65% (13/20) | More steps hurt — overfitting |
 | Our v7.2 (ActionMasker + F&G + ma_cross) | agent2/dev | **-0.284** ❌ | -3.81% | 35% (8/23) | F&G = noise at 1h; obs 1691 too big for 300k steps |
+| Our v8 (LSTM, obs=38, no self-play) | agent2/dev | **-0.212** | -3.29% | 42% (8/19) | LSTM недообучился; 300k шагов мало |
+| Our v9 (self-play + liq proxy, 1h) | agent2/dev | **-0.263** | -2.51% | 52% (12/23) | Self-play не решил режимную проблему; последние 4 окна все в плюсе |
+| Our v10 (15m + alpha reward) | agent2/dev | 🔄 обучается | — | — | 3/3 окна: -3.5% / +5.4% / +4.2% — alpha reward работает (медвежий 2022 с -19% → -3.5%) |
 
 ---
 

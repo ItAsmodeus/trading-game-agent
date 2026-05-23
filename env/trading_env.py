@@ -152,6 +152,9 @@ class TradingEnv(gym.Env):
 
         new_value = self.sim.portfolio.total_value(new_prices)
 
+        # BTC benchmark return this step (for alpha reward)
+        btc_ret = (new_price - price) / max(price, 1.0)
+
         reward = self._compute_reward(
             prev_value=prev_value,
             new_value=new_value,
@@ -159,6 +162,7 @@ class TradingEnv(gym.Env):
             prices=new_prices,
             ret_1h=float(row.get("ret_1", 0.0)),
             was_in_position=was_in_position,
+            btc_ret=btc_ret,
         )
 
         # Milestone bonus (curriculum learning)
@@ -236,8 +240,12 @@ class TradingEnv(gym.Env):
         prices: dict,
         ret_1h: float,
         was_in_position: bool = False,
+        btc_ret: float = 0.0,
     ) -> float:
-        base_pnl = (new_value - prev_value) / CFG.STARTING_CAPITAL
+        # Alpha over BTC buy-and-hold: incentivises shorting in bear markets
+        # and holding cash when BTC falls (instead of punishing inaction blindly).
+        agent_ret = (new_value - prev_value) / max(prev_value, 1.0)
+        base_pnl = agent_ret - btc_ret
 
         pos = self.sim.portfolio.positions.get(self.symbol)
         in_cash = not (pos and pos.is_open)

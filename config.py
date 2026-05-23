@@ -19,7 +19,7 @@ class GameConfig:
         "BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT", "XRP/USDT",
         "ADA/USDT", "DOGE/USDT", "AVAX/USDT", "LINK/USDT", "DOT/USDT",
     ])
-    TIMEFRAME: str = "1h"
+    TIMEFRAME: str = "15m"
 
     # ── State space ───────────────────────────────────────────────────────────
     LOOKBACK: int = 60       # свечей в состоянии (60h ≈ 2.5 дня)
@@ -57,7 +57,7 @@ class GameConfig:
     MAX_LEVERAGE: float = 5.0
 
     # ── Обучение ──────────────────────────────────────────────────────────────
-    MAX_STEPS_PER_EPISODE: int = 24 * 30    # 30 дней в часах
+    MAX_STEPS_PER_EPISODE: int = 24 * 30    # 720 баров = 7.5 дней на 15m (было 30 дней на 1h)
     TRAIN_START: str = "2020-01-01"
     TRAIN_END: str = "2024-01-01"
     VAL_START: str = "2024-01-01"

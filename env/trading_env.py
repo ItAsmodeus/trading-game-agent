@@ -216,7 +216,7 @@ class TradingEnv(gym.Env):
 
         # Time features: episode progress + weekly cycle + hour-of-day (H-009)
         ep_progress = self._episode_steps / max(CFG.MAX_STEPS_PER_EPISODE, 1)
-        weekly_phase = (self._current_idx % 168) / 168.0
+        weekly_phase = (self._current_idx % 672) / 672.0  # 672 = 7d × 24h × 4 bars/h at 15m
         hour_of_day = self.data.index[self._current_idx].hour / 24.0
         time_obs = np.array([
             np.sin(2 * np.pi * ep_progress),
@@ -282,7 +282,7 @@ class TradingEnv(gym.Env):
         if len(closes) < 2:
             return 0.5
         log_rets = np.log(closes / closes.shift(1)).dropna()
-        return float(log_rets.std() * np.sqrt(24 * 365))
+        return float(log_rets.std() * np.sqrt(4 * 24 * 365))  # 4 bars/h at 15m
 
     def _check_terminal(self, prices: dict) -> tuple[bool, str]:
         value = self.sim.portfolio.total_value(prices)

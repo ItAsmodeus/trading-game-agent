@@ -282,7 +282,7 @@ def add_features(df: pd.DataFrame) -> pd.DataFrame:
     d["mu_60"] = log_ret.rolling(60).mean().clip(-0.05, 0.05)
 
     # 20-bar annualized volatility (1h data: annualize by sqrt(24*365) ≈ 93.6)
-    d["sigma_20"] = log_ret.rolling(20).std() * np.sqrt(24 * 365)
+    d["sigma_20"] = log_ret.rolling(20).std() * np.sqrt(4 * 24 * 365)  # 4 bars/h at 15m
     d["sigma_20"] = d["sigma_20"].clip(0, 3)
 
     # Z-score: how far is price from its GBM "expected" value

@@ -19,8 +19,9 @@
 | Our v7.1 (500k steps) | agent2/dev | 0.365 | +2.54% | 65% (13/20) | More steps hurt — overfitting |
 | Our v7.2 (ActionMasker + F&G + ma_cross) | agent2/dev | **-0.284** ❌ | -3.81% | 35% (8/23) | F&G = noise at 1h; obs 1691 too big for 300k steps |
 | Our v8 (LSTM, obs=38, no self-play) | agent2/dev | **-0.212** | -3.29% | 42% (8/19) | LSTM недообучился; 300k шагов мало |
-| Our v9 (self-play + liq proxy, 1h) | agent2/dev | **-0.263** | -2.51% | 52% (12/23) | Self-play не решил режимную проблему; последние 4 окна все в плюсе |
-| Our v10 (15m + alpha reward) | agent2/dev | 🔄 обучается | — | — | 3/3 окна: -3.5% / +5.4% / +4.2% — alpha reward работает (медвежий 2022 с -19% → -3.5%) |
+| Our v9 (self-play + liq proxy, 1h) | agent2/dev | **-0.263** | -2.51% | 52% (12/23) | Self-play не решил режимную проблему — неправильная формулировка: агент не генерирует условия, а просто торгует рядом. Последние 4 окна в плюсе. |
+| Our v10 (15m + alpha reward) | agent2/dev | **-0.383** ❌ | -1.70% | 30% (7/23) | Alpha reward помог медвежьим окнам (2022: -19%→-3.5%), но убил бычьи (агент сидит в кэше вместо лонга). Best window: +9.64% (Jan 2024 bull). |
+| Our v11 (Adversarial Regime, 15m) | agent2/dev | 🔄 обучается | — | — | RegimeAdversary (Thompson Sampling) — бандит сэмплирует bull/bear/sideways/volatile режимы, фокусируется на сложных. Первые 7 окон: -12.9%/+0.9%/-12.3%/+3.6%/+6.0%/-2.8%/-0.7% |
 
 ---
 

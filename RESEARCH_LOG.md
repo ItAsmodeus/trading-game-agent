@@ -177,6 +177,24 @@ Reward = 70% собственный PnL + 30% (свой_портфель − п�
 
 ---
 
+### H-015: v13 — чистый baseline + исправление регрессий (2026-05-29)
+**Результат:** WF Sharpe **+0.179** | Mean +2.39% | Std 13.34% | Win rate 15/23 (65%)
+
+**Два бага найдены и исправлены:**
+
+1. **Reward regression (v10→v13):** `_compute_reward()` в "pnl" режиме использовал `agent_ret - btc_ret` (alpha) вместо чистого `agent_ret`. Это было введено в v10 без отдельного флага и никто не заметил. Исправление: разделены три режима — `pnl` = `agent_ret`, `alpha` = `agent_ret - btc_ret`, `sharpe` = rolling Sharpe.
+
+2. **OOM silent crash:** `except Exception` не ловит `MemoryError` (это `BaseException`, не `Exception`). Поэтому крэш на окне 11 убивал весь прогон без сообщения. Исправление: `except BaseException` + `del previous_model` + `del prev_sd, curr_sd` + `gc.collect()` после TL копии + N_ENVS 2→1.
+
+**Сравнение с v7:**
+- Mean return почти идентичен (+2.39% vs +2.67%) ✓
+- Win rate аналогичный (65% vs 68%) ✓  
+- Std выше (13.34% vs ~7%) — объясняется тем, что v7 запускался на 19/23 окнах (пропустил 4 из-за TL shape mismatch), и эти пропущенные окна были сложными периодами
+
+**Вывод:** Baseline звучный. Высокий std — реальный профиль риска на честных 23 окнах. Переходим к Phase 2: behavioral features.
+
+---
+
 ### H-011: ActionMasker + Fear & Greed Index + ma_cross (v7.2) — ОТКЛОНЕНО
 **Дата:** 2026-05-20
 **Результат:** WF Sharpe -0.284 (регресс с +0.379 у v7)

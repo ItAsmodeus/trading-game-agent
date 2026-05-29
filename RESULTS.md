@@ -25,6 +25,7 @@
 | Our v12 (MLP + 1h + Adversarial) | agent2/dev | **-0.247** | -2.79% | 43% (10/23) | Лучший Sharpe среди adversarial версий. Win rate 43% — лучший после v7. НО: катастрофические окна (-33%, -22%) из-за разреженных сегментов (1h: только ~9 сегментов/окно vs нужно 20+). Adversarial с малым кол-вом данных учит агента избегать медвежьих режимов → он рушится на бычьих. |
 | Our v13 (clean MLP+1h, pure PnL) | agent2/dev | **+0.179** | +2.39% | 65% (15/23) | Baseline reproduced. Mean/win rate ≈ v7. Std=13.34% выше из-за честных 23 окон (v7 пропустил 4). Два бага исправлены: reward regression (alpha в pnl-mode с v10) + OOM (MemoryError не ловился except Exception). Best: +41.39% (Nov2024 bull), Worst: -27.35% (Jan2023 FTX aftermath). |
 | Our v14 (+ fr_z + fr_ma24) | agent2/dev | **-0.246** ❌ | -2.63% | 48% (11/23) | Funding rate z-score навредил. Win 15 (Nov2024 bull): v13=+41% vs v14=-14%. fr_z был на max → агент шортил когда BTC шёл 60k→100k. FR-z работает как mean-reversion на неделях/месяцах, не на 1h. |
+| Our v15 (regime-balanced 33/33/33) | agent2/dev | **+0.059** ⚠️ | +0.53% | 50% (11/22) | Режимно-сбалансированная выборка эпизодов (p33/p67 split, 33% bear/neutral/bull). Std снизился (8.89% vs 13.34%), но и mean упал (+0.53% vs +2.39%). Оверторговля в окнах 8/9/12 (626/470/527 сделок). Win15 (Nov2024): +7.49% — лучше v14 (-13.98%), но хуже v13 (+41.39%). Окно 17 пропущено (Binance rate limit). Best: +18.17% (Aug2022). |
 
 ---
 
